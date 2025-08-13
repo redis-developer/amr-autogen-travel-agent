@@ -28,7 +28,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone and install
 git clone <repository-url>
-cd amr-autogen-travel-agent-full
+cd amr-autogen-travel-agent
 uv sync
 ```
 
