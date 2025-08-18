@@ -5,7 +5,6 @@ from pathlib import Path
 from datetime import datetime
 from redis import Redis
 
-from icalendar import Calendar, Event
 from tavily import TavilyClient
 
 from autogen_core.memory import MemoryContent, MemoryMimeType
@@ -16,6 +15,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.ui import Console
 
 from redisvl.redis.utils import convert_bytes
+from config import AppConfig
 
 
 class TravelAgent:
@@ -24,41 +24,39 @@ class TravelAgent:
     Helps users plan trips, save preferences, search for travel info, and export itineraries.
     """
     
-    def __init__(self, 
-                 openai_api_key: Optional[str] = None,
-                 tavily_api_key: Optional[str] = None,
-                 redis_url: str = "redis://localhost:6379",
-                 model_name: str = "gpt-4.1"):
+    def __init__(self, config: Optional[AppConfig] = None):
         """
         Initialize the travel agent with all necessary components.
         
         Args:
-            openai_api_key: OpenAI API key (if None, uses env var OPENAI_API_KEY)
-            tavily_api_key: Tavily API key (if None, uses env var TAVILY_API_KEY)
-            redis_url: Redis connection URL
-            model_name: OpenAI model to use
+            config: Application configuration (if None, loads from environment)
         """
-        # Set API keys
-        if openai_api_key:
-            os.environ["OPENAI_API_KEY"] = openai_api_key
-        if tavily_api_key:
-            os.environ["TAVILY_API_KEY"] = tavily_api_key
+        # Load configuration
+        if config is None:
+            from config import get_config
+            config = get_config()
+        
+        self.config = config
+        
+        # Set environment variables for libraries that expect them
+        os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        os.environ["TAVILY_API_KEY"] = config.tavily_api_key
             
         # Initialize Tavily client
-        self.tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY", ""))
+        self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
         
         # Initialize Redis memory
         self.memory = RedisMemory(
             config=RedisMemoryConfig(
-                redis_url=redis_url,
-                index_name="user_preferences",
-                prefix="preference",
+                redis_url=config.redis_url,
+                index_name=config.redis_index_name,
+                prefix=config.redis_prefix,
             )
         )
         
         # Initialize model client
         self.model_client = OpenAIChatCompletionClient(
-            model=model_name, 
+            model=config.model_name, 
             parallel_tool_calls=False
         )
         
@@ -75,10 +73,23 @@ class TravelAgent:
             )
         )
         return "ok"
-    
-    def search_web(self, query: str, max_results: int = 5) -> Dict[str, Any]:
-        """Search the web for travel-related information."""
-        return self.tavily_client.search(query=query, max_results=max_results)
+
+    def search_web(self, query: str, topic: str = "general") -> Dict[str, Any]:
+        """Search the web for travel-related information and extract content from top results."""
+        # Search for results
+        search_results = self.tavily_client.search(
+            query=query,
+            topic=topic,
+            search_depth="basic",
+            max_results=5
+        )
+        
+        # Extract content from top 3 URLs
+        # top_urls = [r["url"] for r in search_results["results"][:3]]
+        # extracted_pages = [self.tavily_client.extract(url) for url in top_urls]
+        
+        return search_results
+
     
     # def export_calendar(self, itinerary: List[Dict], out_path: str = "itinerary.ics") -> str:
     #     """Export the itinerary plan into a calendar file format."""
@@ -135,7 +146,7 @@ class TravelAgent:
 
                 "Always be proactive and focus on creating actionable travel plans with specific recommendations the user can book."
             ),
-            max_tool_iterations=8,
+            max_tool_iterations=self.config.max_tool_iterations,
         )
     
     async def chat(self, user_message: str, user_id: Optional[str] = None) -> str:
