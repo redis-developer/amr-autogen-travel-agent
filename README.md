@@ -29,36 +29,43 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Clone and install
 git clone <repository-url>
 cd amr-autogen-travel-agent
+
 uv sync
 ```
 
-### Step 4: Set Your API Keys
+### Step 4: Configure Your Environment
+Create a `.env` file in the project directory (copy from `env.example`):
 ```bash
-# Set your API keys (replace with your actual keys)
-export OPENAI_API_KEY="your-openai-api-key-here"
-export TAVILY_API_KEY="your-tavily-api-key-here"
+cp env.example .env
+```
+
+Edit the `.env` file with your actual API keys:
+```bash
+# Required API Keys
+OPENAI_API_KEY=sk-your-openai-api-key-here
+TAVILY_API_KEY=your-tavily-api-key-here
+
+# Optional Configuration (defaults shown)
+REDIS_URL=redis://localhost:6379
 ```
 
 ### Step 5: Run the Demo
 ```bash
-python gradio_app.py
+uv run python gradio_app.py
 ```
 
 The app will open at `http://localhost:7860` 🎉
+
+The application will automatically:
+- ✅ Validate your configuration and API keys
+- ✅ Check Redis connectivity
+- ✅ Load with responsive UI and memory management
 
 ## 💬 Try These Examples
 
 Once the app is running, try asking:
 
-**Basic Travel Questions:**
-- "I want to plan a week-long trip to Japan this fall"
-- "Help me find flights from New York to Paris for 2 people"
-- "What are the best restaurants in Tokyo for someone with food allergies?"
-
-**Watch the Memory Panel:**
-- As you chat, your preferences will appear on the right side
-- The AI learns your budget, travel style, dietary needs, etc.
-- This memory persists across conversations
+TBD
 
 ## 🛠️ How It Works
 
@@ -70,22 +77,12 @@ Once the app is running, try asking:
 
 **Key Files:**
 - `gradio_app.py` - The main UI application
-- `agent.py` - The travel AI agent with memory
+- `agent.py` - The travel AI agent with memory and tools
+- `config.py` - Configuration management with validation
+- `ui_utils.py` - UI utility functions
+- `assets/styles.css` - UI styling and themes
+- `env.example` - Example environment configuration
 - `pyproject.toml` - Dependencies
-
-## 🔍 Troubleshooting
-
-**App won't start?**
-- Check Redis is running: `docker ps` or `redis-cli ping`
-- Verify API keys are set: `echo $OPENAI_API_KEY`
-
-**No preferences showing?**
-- Make sure Redis is connected
-- Try asking travel questions with specific preferences
-
-**Import errors?**
-- Run `uv sync` to reinstall dependencies
-- Make sure you're in the project directory
 
 
 ---
