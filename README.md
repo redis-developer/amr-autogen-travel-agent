@@ -85,7 +85,6 @@ TBD
 - `pyproject.toml` - Dependencies
 
 
-
 ---
 
 **Start chatting and watch your travel preferences get smarter! 🧳✈️**
