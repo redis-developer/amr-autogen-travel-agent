@@ -21,7 +21,7 @@ class AppConfig(BaseSettings):
     
     # Model Configuration
     model_name: str = Field(default="gpt-4", env="MODEL_NAME", description="OpenAI model name")
-    max_tool_iterations: int = Field(default=12, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
+    max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
     
     # Server Configuration
     server_name: str = Field(default="0.0.0.0", env="SERVER_NAME", description="Server host")
