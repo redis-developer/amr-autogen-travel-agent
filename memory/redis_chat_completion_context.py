@@ -86,15 +86,8 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
 
     def _serialize_message(self, message: LLMMessage) -> str:
         """Serialize a message using Pydantic model_dump if available, fallback to __dict__."""
-        # Try Pydantic model_dump first (handles complex objects automatically)
-        if hasattr(message, 'model_dump'):
-            return json.dumps(message.model_dump())
-        
-        # Fallback to __dict__ for non-Pydantic objects
-        try:
-            return json.dumps(message.__dict__)
-        except TypeError as e:
-            raise ValueError(f"Message is not JSON serializable and not a Pydantic model: {e}")
+        return json.dumps(message.model_dump())
+
 
     def _deserialize_message(self, message_data: str) -> LLMMessage:
         """Deserialize a message from Redis storage."""
@@ -115,15 +108,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         if message_type not in message_classes:
             raise ValueError(f"Unknown message type: {message_type}")
     
-        try:
-            return message_classes[message_type](**data)
-        except Exception as e:
-            print(f"Error reconstructing {message_type}: {e}")
-            # Fallback: create a simple UserMessage with the content if available
-            if "content" in data and isinstance(data["content"], str):
-                return UserMessage(content=data["content"])
-            else:
-                return UserMessage(content="[Message reconstruction failed]")
+        return message_classes[message_type](**data)
 
     async def add_message(self, message: LLMMessage) -> None:
         """Add a message to the Redis-backed context."""

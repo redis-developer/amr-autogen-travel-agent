@@ -17,6 +17,7 @@ from config import AppConfig
 
 from memory.redis_chat_completion_context import RedisChatCompletionContext
 
+
 @dataclass
 class UserCtx:
     controller: MemoryController
@@ -43,8 +44,6 @@ class TravelAgent:
 
         # Shared clients
         self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
-
-        # App uses two model deployments (can be the same if you prefer)
         self.agent_model = OpenAIChatCompletionClient(
             model=config.travel_agent_model_name, parallel_tool_calls=False
         )
@@ -60,31 +59,26 @@ class TravelAgent:
         if user_id in self._users:
             return self._users[user_id]
 
-        # Per-user logger (nice to show "insights applied" in the demo logs)
         logger = PageLogger(config={"level": "INFO", "path": f"./memory/logs/{user_id}"})
-
-        # Per-user memory controller with a per-user bank path (persists across sessions)
+        # Assemble task centric memory for the user
         controller = MemoryController(
             reset=False,               # keep insights alive for this user
-            client=self.memory_model,  # model used by the controller for generalize/validate
+            client=self.memory_model,
             logger=logger,
             config={
                 "generalize_task": True,
                 "generate_topics": True,
                 "validate_memos": True,
-                "max_memos_to_retrieve": 4,        # keep prompt small/predictable
+                "max_memos_to_retrieve": 4,  
                 "MemoryBank": {"path": f"./memory/users/{user_id}"},
             },
         )
-
-        # Teachability adapter (auto learn + auto inject relevant insights)
         teachability = Teachability(controller, name=f"tcm_{user_id}")
-
+        # Set up chat history management for the user
         model_context = RedisChatCompletionContext(redis_url=self.config.redis_url, user_id=user_id)
-
-        # A supervisor agent bound to THIS user's Teachability memory
+        # Build the supervisor agent
         supervisor = self._create_supervisor_agent(model_context=model_context, memory_adapter=teachability)
-
+        # Build user ctx and cache it
         ctx = UserCtx(controller=controller, teachability=teachability, supervisor=supervisor, logger=logger)
         self._users[user_id] = ctx
         return ctx
@@ -176,7 +170,7 @@ class TravelAgent:
         return "I'm sorry, I couldn't process that. Please try again."
     
     # -----------------
-    # Optional helpers
+    # Utilities
     # -----------------
 
     async def get_chat_history(self, user_id: str, n: Optional[int] = None) -> List[Dict[str, str]]:
@@ -206,20 +200,19 @@ class TravelAgent:
             for msg in messages:
                 # Only show user messages and assistant messages with actual text content
                 if msg.__class__.__name__ == 'UserMessage':
-                    if hasattr(msg, 'content') and msg.content and msg.content.strip():
+                    if hasattr(msg, 'content') and msg.content and isinstance(msg.content, str):
                         gradio_messages.append({
                             'role': 'user',
                             'content': msg.content
                         })
                 elif msg.__class__.__name__ == 'AssistantMessage':
                     # Only show assistant messages that have actual text content (not just tool calls)
-                    if hasattr(msg, 'content') and msg.content and msg.content.strip():
+                    if hasattr(msg, 'content') and msg.content and isinstance(msg.content, str):
                         gradio_messages.append({
                             'role': 'assistant', 
                             'content': msg.content
                         })
                 # Skip everything else: SystemMessage, FunctionExecutionResultMessage, tool calls, etc.
-            
             return gradio_messages
             
         except Exception as e:
