@@ -45,12 +45,10 @@ class TravelAgentUI:
         """
         # Add user message immediately
         history.append({"role": "user", "content": message})
-        print("CHATTING WITH AGENT", message, flush=True)
         
         try:
             # Get response from the agent
             response = await self.agent.chat(message, user_id=self.session_id)
-            print("RESPONSE", response, flush=True)
             
             # Add assistant response
             history.append({"role": "assistant", "content": response})
@@ -297,7 +295,6 @@ class TravelAgentUI:
             # Set up the chat functionality
             async def handle_chat_start(message, history):
                 """Show typing indicator when chat starts."""
-                print("CHAT START", message, flush=True)
                 if not message.strip():
                     return "", history, await self.get_user_preferences()
                 
@@ -310,8 +307,6 @@ class TravelAgentUI:
             
             async def handle_chat_complete(message, history):
                 """Complete the chat interaction."""
-                print("CHAT COMPLETE", repr(message), flush=True)
-                print("HISTORY BEFORE:", [h.get("content", "")[:50] for h in history], flush=True)
                 
                 # Extract the actual message from history since the message parameter gets cleared
                 if not history or len(history) < 2:
@@ -323,7 +318,6 @@ class TravelAgentUI:
                     user_message = history[-2]["content"]
                     # Remove the typing indicator
                     history = history[:-1]
-                    print("REMOVED THINKING, HISTORY NOW:", [h.get("content", "")[:50] for h in history], flush=True)
                 
                 if not user_message:
                     return history, await self.get_user_preferences()
@@ -331,8 +325,6 @@ class TravelAgentUI:
                 # The history now has the user message, so we need to pass the history without the user message
                 # since chat_with_agent will add it again
                 clean_history = history[:-1] if history and history[-1]["role"] == "user" else history
-                print("CLEAN HISTORY:", [h.get("content", "")[:50] for h in clean_history], flush=True)
-                print("USER MESSAGE:", repr(user_message), flush=True)
                 result = await self.chat_with_agent(user_message, clean_history)
                 # Also refresh memory after chat
                 memory_html = await self.get_user_preferences()
@@ -410,7 +402,6 @@ def create_app(config=None) -> gr.Interface:
     if config is None:
         config = get_config()
     ui = TravelAgentUI(config=config)
-    print("Travel agent built")
     return ui.create_interface()
 
 
