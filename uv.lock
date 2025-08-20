@@ -30,6 +30,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "redis" },
+    { name = "redisvl" },
     { name = "sentence-transformers" },
     { name = "tavily-python" },
     { name = "typing-extensions" },
@@ -47,6 +48,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "redis", specifier = ">=5.0.0" },
+    { name = "redisvl", specifier = "==0.8.1" },
     { name = "sentence-transformers", specifier = ">=5.1.0" },
     { name = "tavily-python", specifier = ">=0.5.0" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
@@ -1939,7 +1941,7 @@ wheels = [
 
 [[package]]
 name = "redisvl"
-version = "0.8.0"
+version = "0.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonpath-ng" },
@@ -1951,9 +1953,9 @@ dependencies = [
     { name = "redis" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/88/be/22d3f21d5cf1caa96527cb9c61950c172b23342d8e6acae570882da05c75/redisvl-0.8.0.tar.gz", hash = "sha256:00645cf126039ee4d734a1ff273cc4e8fea59118f7790625eeff510fce08b0d4", size = 551876 }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/ee/43148f41863bad914035cd3cb094c7a7e0de7554cc39eacf5d5846c9b8c7/redisvl-0.8.1.tar.gz", hash = "sha256:47bbfaca7e1cc1f8675ef9c7d7ff4a298f3579ce044e1091842f4c87a60bc39b", size = 572625 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/74/484d1adefe84ab4eb3cd77bb6aa5dc7a1d3920bb0d5ca281bcceedf89ad4/redisvl-0.8.0-py3-none-any.whl", hash = "sha256:365c31819224b3e4e9acca1ed2ac9eed347d4ee4ca8d822010dbd51a8b725705", size = 152348 },
+    { url = "https://files.pythonhosted.org/packages/a7/b2/29f68abb35072a5d99087e39abbcd7e5e114fa95e3f16b2e444f4ebc9d35/redisvl-0.8.1-py3-none-any.whl", hash = "sha256:a3a3de1c4f1535643cc262ac5e506899232e3fe68be7c7056c7979a180c9cc76", size = 152607 },
 ]
 
 [[package]]

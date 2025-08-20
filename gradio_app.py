@@ -83,7 +83,7 @@ class TravelAgentUI:
         
         # Check if user already exists in the agent
         if self.agent.user_exists(new_user_id):
-            return gr.update(), [], f"❌ User '{new_user_id}' already exists. Please choose a different ID."
+            return gr.update(), []
         
         # Create new user by making the agent initialize context for them
         self.current_user_id = new_user_id
@@ -93,7 +93,7 @@ class TravelAgentUI:
         # Update user list from agent (should now include the new user)
         user_choices = self.agent.get_user_list()
         
-        return gr.update(choices=user_choices, value=new_user_id), [], f"✅ Created and switched to user: {new_user_id}"
+        return gr.update(choices=user_choices, value=new_user_id), []
     
     async def switch_user(self, selected_user_id: str) -> Tuple[List[dict], str]:
         """
@@ -106,7 +106,7 @@ class TravelAgentUI:
             Tuple of (chat_history_for_user, status_message)
         """
         if not selected_user_id or not self.agent.user_exists(selected_user_id):
-            return [], "❌ Invalid user selection."
+            return [], ""
         
         self.current_user_id = selected_user_id
         
@@ -117,7 +117,7 @@ class TravelAgentUI:
             print(f"Error loading chat history for user {selected_user_id}: {e}")
             chat_history = []
         
-        return chat_history, f"✅ Switched to user: {selected_user_id}"
+        return chat_history, ""
     
     def delete_user(self, user_to_delete: str) -> Tuple[gr.update, List[dict], str]:
         """
@@ -130,11 +130,11 @@ class TravelAgentUI:
             Tuple of (updated_user_list, empty_chat_history, status_message)
         """
         if not user_to_delete or not self.agent.user_exists(user_to_delete):
-            return gr.update(), [], "❌ Invalid user to delete."
+            return gr.update(), []
         
         # Don't allow deleting the currently selected user
         if user_to_delete == self.current_user_id:
-            return gr.update(), [], "❌ Cannot delete currently selected user. Switch to another user first."
+            return gr.update(), []
         
         # Delete user from agent (this clears their memory and context)
         self.agent.reset_user_memory(user_to_delete)
@@ -143,7 +143,7 @@ class TravelAgentUI:
         user_choices = self.agent.get_user_list()
         new_value = self.current_user_id if self.current_user_id in user_choices else (user_choices[0] if user_choices else None)
         
-        return gr.update(choices=user_choices, value=new_value), [], f"✅ Deleted user: {user_to_delete}"
+        return gr.update(choices=user_choices, value=new_value), []
     
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user."""
@@ -259,39 +259,29 @@ class TravelAgentUI:
                     """)
                     
                     # Create new user section
-                    with gr.Group():
-                        gr.HTML("<h4 style='color: #FFFFFF; margin: 10px 0;'>Create New User</h4>")
-                        with gr.Row():
-                            new_user_input = gr.Textbox(
-                                placeholder="Enter User ID (optional)",
-                                show_label=False,
-                                scale=3,
-                                container=False
-                            )
-                            create_user_btn = gr.Button("Create", variant="primary", scale=1)
+                    gr.HTML("<h4 style='color: #FFFFFF; margin: 15px 0 10px 0; font-size: 14px; font-weight: 500;'>✨ Create New User</h4>")
+                    with gr.Row():
+                        new_user_input = gr.Textbox(
+                            placeholder="Enter User ID (leave empty for auto-generated)",
+                            show_label=False,
+                            scale=3,
+                            container=False
+                        )
+                        create_user_btn = gr.Button("Create", variant="primary", scale=1)
                     
                     # User list section
-                    with gr.Group():
-                        gr.HTML("<h4 style='color: #FFFFFF; margin: 10px 0;'>Select User</h4>")
-                        user_list = gr.Dropdown(
-                            choices=[],
-                            value=None,
-                            label="Active Users",
-                            interactive=True,
-                            allow_custom_value=False
-                        )
-                        with gr.Row():
-                            delete_user_btn = gr.Button("Delete User", variant="secondary", size="sm")
-                    
-                    # Status display
-                    status_display = gr.HTML(
-                        value="""
-                        <div style="text-align: center; color: #8A99A0; font-size: 14px; margin-top: 15px; padding: 10px; background: #091A23; border-radius: 6px;">
-                            👆 Create a new user to get started
-                        </div>
-                        """,
-                        visible=True
+                    gr.HTML("<h4 style='color: #FFFFFF; margin: 20px 0 10px 0; font-size: 14px; font-weight: 500;'>🗣️ Select Active User</h4>")
+                    user_list = gr.Dropdown(
+                        choices=[],
+                        value=None,
+                        label="",
+                        interactive=True,
+                        allow_custom_value=False,
+                        show_label=False
                     )
+                    delete_user_btn = gr.Button("Delete Selected User", variant="secondary", size="sm")
+                    
+
                 
                 # Right Column - Chat Interface
                 with gr.Column(scale=2):
@@ -326,10 +316,7 @@ class TravelAgentUI:
                     
                     # Control buttons
                     with gr.Row():
-                        clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")
-                        current_user_display = gr.HTML(
-                            value="<div style='color: #8A99A0; font-size: 12px; text-align: center; margin-top: 5px;'>No user selected</div>"
-                        )    
+                        clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")    
             
             
             # Event handler functions
@@ -366,45 +353,25 @@ class TravelAgentUI:
             
             def handle_create_user(user_id_input):
                 """Handle creating a new user."""
-                updated_user_list, empty_chat, status_msg = self.create_new_user(user_id_input)
-                
-                # Update placeholder based on success
-                chat_enabled = "✅" in status_msg
-                current_user_msg = f"<div style='color: #DCFF1E; font-size: 12px; text-align: center; margin-top: 5px;'>Current: {self.current_user_id}</div>" if self.current_user_id else "<div style='color: #8A99A0; font-size: 12px; text-align: center; margin-top: 5px;'>No user selected</div>"
+                updated_user_list, empty_chat = self.create_new_user(user_id_input)
                 
                 return (
                     updated_user_list,  # user_list
                     empty_chat,  # chatbot
-                    status_msg,  # status_display
-                    "",  # clear new_user_input
-                    current_user_msg  # current_user_display
+                    ""  # clear new_user_input
                 )
             
             async def handle_switch_user(selected_user_id):
                 """Handle switching to a different user."""
-                chat_history, status_msg = await self.switch_user(selected_user_id)
+                chat_history, _ = await self.switch_user(selected_user_id)
                 
-                # Update display based on success
-                current_user_msg = f"<div style='color: #DCFF1E; font-size: 12px; text-align: center; margin-top: 5px;'>Current: {self.current_user_id}</div>" if self.current_user_id else "<div style='color: #8A99A0; font-size: 12px; text-align: center; margin-top: 5px;'>No user selected</div>"
-                
-                return (
-                    chat_history,  # chatbot
-                    status_msg,  # status_display
-                    current_user_msg  # current_user_display
-                )
+                return chat_history  # chatbot
             
             def handle_delete_user(selected_user_id):
                 """Handle deleting a user."""
-                updated_user_list, empty_chat, status_msg = self.delete_user(selected_user_id)
+                updated_user_list, empty_chat = self.delete_user(selected_user_id)
                 
-                # Update display based on current user
-                current_user_msg = f"<div style='color: #DCFF1E; font-size: 12px; text-align: center; margin-top: 5px;'>Current: {self.current_user_id}</div>" if self.current_user_id else "<div style='color: #8A99A0; font-size: 12px; text-align: center; margin-top: 5px;'>No user selected</div>"
-                
-                return (
-                    updated_user_list,  # user_list
-                    status_msg,  # status_display
-                    current_user_msg  # current_user_display
-                )
+                return updated_user_list  # user_list
             
             # Event handlers for chat
             msg.submit(
@@ -438,9 +405,7 @@ class TravelAgentUI:
                 outputs=[
                     user_list,
                     chatbot,
-                    status_display,
-                    new_user_input,
-                    current_user_display
+                    new_user_input
                 ],
                 queue=False
             )
@@ -452,9 +417,7 @@ class TravelAgentUI:
                 outputs=[
                     user_list,
                     chatbot,
-                    status_display,
-                    new_user_input,
-                    current_user_display
+                    new_user_input
                 ],
                 queue=False
             )
@@ -463,11 +426,7 @@ class TravelAgentUI:
             user_list.change(
                 handle_switch_user,
                 inputs=[user_list],
-                outputs=[
-                    chatbot,
-                    status_display,
-                    current_user_display
-                ],
+                outputs=[chatbot],
                 queue=False
             )
             
@@ -475,11 +434,7 @@ class TravelAgentUI:
             delete_user_btn.click(
                 handle_delete_user,
                 inputs=[user_list],
-                outputs=[
-                    user_list,
-                    status_display,
-                    current_user_display
-                ],
+                outputs=[user_list],
                 queue=False
             )
             

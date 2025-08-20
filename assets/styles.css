@@ -33,6 +33,7 @@
 /* Global styling */
 .gradio-container {
     max-width: 1200px !important;
+    min-width: 800px !important;
     margin: auto !important;
     background-color: var(--midnight) !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -152,8 +153,8 @@ body {
 
 /* Input field styling */
 .gr-textbox textarea, .gr-textbox input {
-    background-color: var(--dusk) !important;
-    color: var(--white) !important;
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
     border: 1px solid var(--dusk-50p) !important;
     border-radius: 8px !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -329,12 +330,28 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 3px;
 }
 
+/* Force Gradio rows to stay horizontal on desktop */
+.gradio-container .block.gradio-row {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 20px !important;
+}
+
+.gradio-container .block.gradio-column {
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 /* Responsive design for smaller screens */
-@media (max-width: 768px) {
+@media (max-width: 480px) {
     .main-container {
         flex-direction: column !important;
         height: auto !important;
         gap: 16px !important;
+    }
+    
+    .gradio-container .block.gradio-row {
+        flex-direction: column !important;
     }
     
     .memory-panel {

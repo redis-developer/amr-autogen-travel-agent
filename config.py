@@ -17,13 +17,10 @@ class AppConfig(BaseSettings):
     # Model Configuration
     travel_agent_model_name: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL_NAME", description="OpenAI model name for the travel agent")
     memory_model_name: str = Field(default="gpt-4.1-mini", env="MEMORY_MODEL_NAME", description="OpenAI model name for memory operations")
-
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
     
     # Redis Configuration
     redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL", description="Redis connection URL")
-    redis_index_name: str = Field(default="user_preferences", env="REDIS_INDEX_NAME", description="Redis index name")
-    redis_prefix: str = Field(default="preference", env="REDIS_PREFIX", description="Redis key prefix")
     
     # Server Configuration
     server_name: str = Field(default="0.0.0.0", env="SERVER_NAME", description="Server host")

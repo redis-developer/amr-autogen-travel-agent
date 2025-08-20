@@ -18,4 +18,5 @@ dependencies = [
   "gradio>=4.44.0",
   "typing-extensions>=4.0.0",
   "sentence-transformers>=5.1.0",
+  "redisvl==0.8.1",
 ]

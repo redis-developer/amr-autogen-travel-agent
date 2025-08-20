@@ -49,7 +49,6 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         user_id: str = "default",
         initial_messages: List[LLMMessage] | None = None,
     ) -> None:
-        # super().__init__(initial_messages)
         if buffer_size <= 0:
             raise ValueError("buffer_size must be greater than 0.")
         

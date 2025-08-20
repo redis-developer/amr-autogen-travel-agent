@@ -9,18 +9,20 @@ from tavily import TavilyClient
 from autogen_core.tools import FunctionTool
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from autogen_ext.experimental.task_centric_memory import MemoryController
+# from autogen_ext.experimental.task_centric_memory import MemoryController
 from autogen_ext.experimental.task_centric_memory.utils import Teachability, PageLogger
 from autogen_agentchat.ui import Console
 
 from config import AppConfig
 
 from memory.redis_chat_completion_context import RedisChatCompletionContext
+from memory.redis_task_memory import RedisMemoryController
+from redisvl.utils.vectorize import HFTextVectorizer
 
 
 @dataclass
 class UserCtx:
-    controller: MemoryController
+    controller: RedisMemoryController
     teachability: Teachability
     supervisor: AssistantAgent
     logger: PageLogger
@@ -48,6 +50,7 @@ class TravelAgent:
             model=config.travel_agent_model_name, parallel_tool_calls=False
         )
         self.memory_model = OpenAIChatCompletionClient(model=config.memory_model_name)
+        self.vectorizer = HFTextVectorizer()
 
         # In-memory registry of user-specific contexts
         self._users: Dict[str, UserCtx] = {}
@@ -60,22 +63,24 @@ class TravelAgent:
             return self._users[user_id]
 
         logger = PageLogger(config={"level": "INFO", "path": f"./memory/logs/{user_id}"})
-        # Assemble task centric memory for the user
-        controller = MemoryController(
+        # Assemble task centric memory for the user with Redis backend
+        controller = RedisMemoryController(
             reset=False,               # keep insights alive for this user
             client=self.memory_model,
             logger=logger,
+            namespace=user_id,         # Use user_id as namespace for isolation
+            vectorizer=self.vectorizer,
+            redis_url=self.config.redis_url,
             config={
                 "generalize_task": True,
                 "generate_topics": True,
                 "validate_memos": True,
                 "max_memos_to_retrieve": 4,  
-                "MemoryBank": {"path": f"./memory/users/{user_id}"},
             },
         )
         teachability = Teachability(controller, name=f"tcm_{user_id}")
         # Set up chat history management for the user
-        model_context = RedisChatCompletionContext(redis_url=self.config.redis_url, user_id=user_id)
+        model_context = RedisChatCompletionContext(redis_url=self.config.redis_url, user_id=user_id, buffer_size)
         # Build the supervisor agent
         supervisor = self._create_supervisor_agent(model_context=model_context, memory_adapter=teachability)
         # Build user ctx and cache it
@@ -130,7 +135,7 @@ class TravelAgent:
     # -----------------
     # Chat + Insights UI
     # -----------------
-    async def _relevant_insights_for_task(self, controller: MemoryController, task_text: str, limit: int = 4) -> list[str]:
+    async def _relevant_insights_for_task(self, controller: RedisMemoryController, task_text: str, limit: int = 4) -> list[str]:
         """Mirror what Teachability retrieves; show a few bullets for transparency."""
         try:
             memos = await controller.retrieve_relevant_memos(task=task_text)
