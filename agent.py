@@ -78,9 +78,9 @@ class TravelAgent:
                 "max_memos_to_retrieve": 4,  
             },
         )
-        teachability = Teachability(controller, name=f"tcm_{user_id}")
+        teachability = Teachability(controller, name=f"{user_id}_memory")
         # Set up chat history management for the user
-        model_context = RedisChatCompletionContext(redis_url=self.config.redis_url, user_id=user_id, buffer_size)
+        model_context = RedisChatCompletionContext(redis_url=self.config.redis_url, user_id=user_id, buffer_size=10)
         # Build the supervisor agent
         supervisor = self._create_supervisor_agent(model_context=model_context, memory_adapter=teachability)
         # Build user ctx and cache it
