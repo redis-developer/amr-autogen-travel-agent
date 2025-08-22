@@ -31,7 +31,7 @@ docker run --name redis -p 6379:6379 -d redis:8.0.3
 Get a free db [here](https://redis.io/cloud).
 
 #### Option C: Azure Managed Redis
-TBD
+Here's a quickstart guide to create Azure Managed Redis for as low as $12 monthly: https://learn.microsoft.com/en-us/azure/redis/quickstart-create-managed-redis
 
 ### Step 3: Setup the Project
 ```bash
