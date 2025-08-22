@@ -1,8 +1,7 @@
 import asyncio
 import gradio as gr
 import os
-from typing import List, Tuple, Optional, Dict
-import uuid
+from typing import List, Dict
 from pathlib import Path
 
 from agent import TravelAgent
@@ -29,121 +28,61 @@ class TravelAgentUI:
     def __init__(self, config=None):
         """Initialize the UI with a travel agent instance."""
         self.config = config or get_config()
-        self.session_id = str(uuid.uuid4())
         self.agent = TravelAgent(config=self.config)
+        self.current_user_id = "Tyler"  # Hardcoded user ID
+        # Initialize the user context
+        self.agent._get_or_create_user_ctx(self.current_user_id)
     
-    async def chat_with_agent(self, message: str, history: List[dict]) -> Tuple[str, List[dict]]:
+    async def chat_with_agent(self, message: str) -> List[dict]:
         """
         Handle chat interaction with the travel agent.
         
         Args:
             message: User's input message
-            history: Chat history as list of message dicts with 'role' and 'content'
             
         Returns:
-            Tuple of (empty string for clearing input, updated history)
+            Complete chat history from Redis for the current user
         """
-        # Add user message immediately
-        history.append({"role": "user", "content": message})
+        # Using hardcoded user Tyler
+        # No need to check for user selection since it's hardcoded
         
         try:
-            # Get response from the agent
-            response = await self.agent.chat(message, user_id=self.session_id)
+            # Send message to agent (it handles adding to Redis automatically)
+            await self.agent.chat(message, user_id=self.current_user_id)
             
-            # Add assistant response
-            history.append({"role": "assistant", "content": response})
-            
-            return "", history
+            # Retrieve updated chat history from Redis
+            history = await self.agent.get_chat_history(self.current_user_id, n=-1)
+            return history
             
         except Exception as e:
             error_msg = f"Sorry, I encountered an error: {str(e)}"
-            history.append({"role": "assistant", "content": error_msg})
-            return "", history
+            # Get current history and add error message
+            try:
+                history = await self.agent.get_chat_history(self.current_user_id, n=-1)
+                history.append({"role": "assistant", "content": error_msg})
+                return history
+            except:
+                return [{"role": "assistant", "content": error_msg}]
     
-    async def get_user_preferences(self) -> str:
-        """
-        Retrieve and format user preferences for display.
+    # User management methods removed - using hardcoded Tyler user
+    
+
+    
+
+    
+    async def clear_chat_history(self) -> List[dict]:
+        """Clear chat history for the current user."""
+        if not self.current_user_id:
+            return []
         
-        Returns:
-            Formatted HTML string of user preferences
-        """
         try:
-            preferences = await self.agent.get_user_preferences(user_id=self.session_id)
-            
-            if not preferences:
-                return """
-                <div style="text-align: center; padding: 40px; color: var(--dusk-50p);">
-                    <h3>No Preferences Found</h3>
-                    <p>Start chatting to learn and save your travel preferences!</p>
-                </div>
-                """
-            
-            html_content = """
-            <div style="font-family: 'Space Grotesk', sans-serif; color: var(--white);">
-                <h3 style="color: var(--yellow); margin-bottom: 20px;">🧠 Your Travel Preferences</h3>
-            """
-            
-            for i, pref in enumerate(preferences):
-                # Format timestamp
-                timestamp = pref.get('timestamp', 'Unknown time')
-                if timestamp and timestamp != 'Unknown time':
-                    try:
-                        # Try to parse and format the timestamp
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                        formatted_time = dt.strftime('%B %d, %Y at %I:%M %p')
-                    except:
-                        formatted_time = timestamp
-                else:
-                    formatted_time = 'Recently'
-                
-                html_content += f"""
-                <div style="
-                    background: linear-gradient(135deg, var(--dusk) 0%, var(--dusk-90p) 100%);
-                    border: 1px solid var(--dusk-70p);
-                    border-left: 4px solid var(--violet);
-                    border-radius: 8px;
-                    padding: 16px;
-                    margin-bottom: 12px;
-                ">
-                    <div style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: flex-start;
-                        margin-bottom: 8px;
-                    ">
-                        <span style="
-                            background-color: var(--violet);
-                            color: var(--midnight);
-                            padding: 4px 8px;
-                            border-radius: 4px;
-                            font-size: 12px;
-                            font-weight: 500;
-                            font-family: 'Space Mono', monospace;
-                        ">#{i+1}</span>
-                        <span style="
-                            color: var(--dusk-30p);
-                            font-size: 12px;
-                        ">{formatted_time}</span>
-                    </div>
-                    <p style="
-                        margin: 0;
-                        line-height: 1.5;
-                        color: var(--white);
-                    ">{pref.get('content', 'No content')}</p>
-                </div>
-                """
-            
-            html_content += "</div>"
-            return html_content
-            
+            # Get the user context and clear its Redis history
+            ctx = self.agent._get_or_create_user_ctx(self.current_user_id)
+            await ctx.supervisor.model_context.clear()
+            return []
         except Exception as e:
-            return f"""
-            <div style="text-align: center; padding: 40px; color: var(--redis-red);">
-                <h3>Error Loading Preferences</h3>
-                <p>Could not retrieve preferences: {str(e)}</p>
-            </div>
-            """
+            print(f"Error clearing chat history for user {self.current_user_id}: {e}")
+            return []
     
     def create_interface(self) -> gr.Interface:
         """Create and return the Gradio interface."""
@@ -226,29 +165,30 @@ class TravelAgentUI:
                 <div style="text-align: center; margin: 20px 0; font-family: 'Space Grotesk', sans-serif;">
                     <h1 style="color: #FFFFFF; margin-bottom: 10px; font-weight: 500;">🌍 AI Travel Concierge</h1>
                     <p style="color: #DCFF1E; font-size: 18px; font-weight: 500;">
-                        Your intelligent travel planning assistant powered by AutoGen & Redis
+                        Your intelligent travel planning assistant powered by AutoGen & TCM
                     </p>
                     <p style="color: #8A99A0; font-size: 14px;">
-                        I can help you plan trips, find flights, recommend activities, and handle dietary restrictions!
+                        Your personal travel planning assistant ready to help!
                     </p>
                 </div>
             """)
             
-            # Main split-view container
-            with gr.Row(elem_classes="main-container"):
-                
-                # Left Panel - Chat Interface
-                with gr.Column(elem_classes="chat-panel"):
+            # Main single-column layout for chat interface
+            with gr.Column():
+                    gr.HTML("""
+                        <div style="text-align: center; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #163341 0%, #091A23 100%); border-radius: 8px;">
+                            <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">💬 Chat Interface</h3>
+                        </div>
+                    """)
                     
-                    # Chat interface
                     chatbot = gr.Chatbot(
                         [],
                         show_label=False,
-                        container=False,
+                        container=True,
                         type="messages",
                         avatar_images=None,
                         show_copy_button=False,
-                        height=400,
+                        height=500,
                         autoscroll=True
                     )
                     
@@ -258,139 +198,94 @@ class TravelAgentUI:
                             placeholder="Ask me about planning your next trip...",
                             show_label=False,
                             container=False,
-                            scale=4,
-                            lines=1
+                            scale=5,
+                            lines=1,
+                            interactive=True
                         )
-                        send_btn = gr.Button("Send", variant="primary", scale=1)
+                        send_btn = gr.Button("Send", variant="primary", scale=1, interactive=True)
                     
                     # Control buttons
                     with gr.Row():
-                        clear_btn = gr.Button("Clear", variant="secondary", size="sm")
-                        refresh_memory_btn = gr.Button("Refresh Memory", variant="secondary", size="sm")
-                
-                # Right Panel - Memory Explorer
-                with gr.Column(elem_classes="memory-panel"):
-                    gr.HTML("""
-                        <div style="padding: 20px; border-bottom: 1px solid var(--dusk-50p);">
-                            <h3 style="color: var(--white); margin: 0; font-size: 18px; font-weight: 500;">
-                                Travel Preferences
-                            </h3>
-                            <p style="color: var(--dusk-30p); margin: 8px 0 0 0; font-size: 14px;">
-                                Learned from our conversations
-                            </p>
-                        </div>
-                    """)
-                    
-                    # Memory display area - start with loading state
-                    memory_display = gr.HTML(
-                        value="""
-                        <div style="text-align: center; padding: 40px; color: var(--dusk-50p);">
-                            <h3>Loading preferences...</h3>
-                        </div>
-                        """,
-                        elem_classes="memory-content"
-                    )    
+                        clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")
             
             
-            # Set up the chat functionality
-            async def handle_chat_start(message, history):
-                """Show typing indicator when chat starts."""
+            # Event handler functions
+            async def handle_streaming_chat(message, history):
+                """Handle streaming chat with console logging for insights."""
                 if not message.strip():
-                    return "", history, await self.get_user_preferences()
+                    yield history
+                    return
                 
-                # Add user message and typing indicator immediately
-                updated_history = history + [
-                    {"role": "user", "content": message},
-                    {"role": "assistant", "content": "Thinking..."}
-                ]
-                return "", updated_history, await self.get_user_preferences()
+                # Add user message to history and show it immediately
+                history = history + [{"role": "user", "content": message}]
+                yield history
+                
+                # Initialize assistant message with animated thinking dots
+                history = history + [{"role": "assistant", "content": '<span class="thinking-animation">●●●</span>'}]
+                yield history
+                
+                try:
+                    # Stream the response
+                    async for partial_response in self.agent.stream_chat_turn(self.current_user_id, message):
+                        # Update the last assistant message with the streaming content
+                        history[-1] = {"role": "assistant", "content": partial_response}
+                        yield history
+                    
+                    # After streaming is complete, log insights to console
+                    insights = await self.agent.insights_for_task(self.current_user_id, message, limit=4)
+                    
+                    if insights:
+                        print(f"\n🧠 INSIGHTS APPLIED (user: {self.current_user_id}) 🧠", flush=True)
+                        for insight in insights:
+                            print(f"• {insight}", flush=True)
+                        print("--- END INSIGHTS ---\n", flush=True)
+                    else:
+                        print(f"--- NO INSIGHTS APPLIED (user: {self.current_user_id}) ---\n", flush=True)
+                    
+                except Exception as e:
+                    error_msg = f"Sorry, I encountered an error: {str(e)}"
+                    # Replace thinking indicator with error message
+                    history[-1] = {"role": "assistant", "content": error_msg}
+                    print(f"❌ Error during streaming chat: {e}", flush=True)
+                    yield history
             
-            async def handle_chat_complete(message, history):
-                """Complete the chat interaction."""
-                
-                # Extract the actual message from history since the message parameter gets cleared
-                if not history or len(history) < 2:
-                    return history, await self.get_user_preferences()
-                
-                # Get the user message from history (should be second to last, before "Thinking...")
-                user_message = None
-                if history[-1]["content"] == "Thinking..." and len(history) >= 2:
-                    user_message = history[-2]["content"]
-                    # Remove the typing indicator
-                    history = history[:-1]
-                
-                if not user_message:
-                    return history, await self.get_user_preferences()
-                
-                # The history now has the user message, so we need to pass the history without the user message
-                # since chat_with_agent will add it again
-                clean_history = history[:-1] if history and history[-1]["role"] == "user" else history
-                result = await self.chat_with_agent(user_message, clean_history)
-                # Also refresh memory after chat
-                memory_html = await self.get_user_preferences()
-                return result[1], memory_html
+            # User management handlers removed - using hardcoded Tyler user
             
-            async def handle_refresh_memory():
-                """Refresh the memory display with loading indicator."""
-                # First show loading state
-                loading_html = """
-                <div style="text-align: center; padding: 40px; color: var(--dusk-50p);">
-                    <h3>Refreshing...</h3>
-                </div>
-                """
-                return loading_html
+
             
-            async def handle_refresh_memory_complete():
-                """Complete the memory refresh."""
-                return await self.get_user_preferences()
+
             
-            # Event handlers with two-step process for better UX
+            # Event handlers for chat - streaming version
+            async def handle_submit_and_clear(message, history):
+                """Handle message submission and immediately clear input."""
+                async for result in handle_streaming_chat(message, history):
+                    yield result, ""
+            
             msg.submit(
-                handle_chat_start,
+                handle_submit_and_clear,
                 [msg, chatbot],
-                [msg, chatbot, memory_display],
-                queue=True
-            ).then(
-                handle_chat_complete,
-                [msg, chatbot],
-                [chatbot, memory_display],
+                [chatbot, msg],
                 queue=True
             )
             
             send_btn.click(
-                handle_chat_start,
+                handle_submit_and_clear,
                 [msg, chatbot],
-                [msg, chatbot, memory_display],
-                queue=True
-            ).then(
-                handle_chat_complete,
-                [msg, chatbot],
-                [chatbot, memory_display],
+                [chatbot, msg],
                 queue=True
             )
+            
+            # User management handlers removed - using hardcoded Tyler user
             
             # Clear chat functionality
+            async def handle_clear_chat():
+                """Handle clearing chat history."""
+                cleared_history = await self.clear_chat_history()
+                return cleared_history, ""
+            
             clear_btn.click(
-                lambda: ([], ""),
+                handle_clear_chat,
                 outputs=[chatbot, msg],
-                queue=False
-            )
-            
-            # Refresh memory functionality with loading state
-            refresh_memory_btn.click(
-                handle_refresh_memory,
-                outputs=[memory_display],
-                queue=True
-            ).then(
-                handle_refresh_memory_complete,
-                outputs=[memory_display],
-                queue=True
-            )
-            
-            # Auto-load memory on interface startup
-            interface.load(
-                handle_refresh_memory_complete,
-                outputs=[memory_display],
                 queue=True
             )
         

@@ -1,3 +1,6 @@
 __pycache__/
 .venv/
 *.ipynb
+context/logs/*
+context/users/*
+memory_bank/*

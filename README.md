@@ -1,25 +1,37 @@
-# 🌍 AI Travel Concierge - Basic Demo
+# 🌍 Autogen Travel Concierge 
 
-A simple AI travel planning assistant built with AutoGen and Redis, featuring an intelligent chat interface with memory capabilities.
+A sophisticated AI travel planning assistant showcasing AutoGen's advanced memory capabilities with dual-layer memory architecture: Redis-backed chat history and Task-Centric Memory (TCM) for intelligent learning.
 
-## 🚀 What This Demo Does
+## 🧠 What's included?
 
-- **Smart Travel Chat**: Ask about destinations, flights, hotels, and activities
-- **Memory System**: Remembers your preferences across conversations using Redis
-- **Real-time Search**: Gets current travel information from the web
-- **Split Interface**: Chat on the left, your learned preferences on the right
+- **🎯 Dual-Layer Memory**: Short-term chat history (Redis) + Long-term learning (TCM)
+- **👥 User Isolation**: Each user gets completely separate memory contexts
+- **🔄 Session Persistence**: Your conversations and preferences survive app restarts
+- **📚 Intelligent Learning**: The agent learns your travel preferences automatically
+- **🌐 Real-time Search**: Live travel information via Tavily search API
+- **💬 Clean Chat UI**: Gradio interface with user management
 
-## 🚀 Quick Setup (5 minutes)
+## 🚀 Quick Setup (<5 minutes)
 
 ### Step 1: Get Your API Keys
-You'll need two free API keys:
+You'll need three API keys:
 - **OpenAI API Key**: Get from [platform.openai.com](https://platform.openai.com/api-keys)
-- **Tavily API Key**: Get from [tavily.com](https://tavily.com) (free tier available)
+- **Tavily API Key**: Get from [tavily.com](https://tavily.com) (free tier available)  
+- **Redis URL**: For chat history storage (see Step 2)
 
-### Step 2: Install Redis
+### Step 2: Set Up Redis
+You have 3 options for Redis:
+
+#### Option A: Local Redis with Docker**
 ```bash
-docker run -d -p 6379:6379 --name redis redis:8.0.3
+docker run --name redis -p 6379:6379 -d redis:8.0.3
 ```
+
+#### Option B: Redis Cloud
+Get a free db [here](https://redis.io/cloud).
+
+#### Option C: Azure Managed Redis
+Here's a quickstart guide to create Azure Managed Redis for as low as $12 monthly: https://learn.microsoft.com/en-us/azure/redis/quickstart-create-managed-redis
 
 ### Step 3: Setup the Project
 ```bash
@@ -30,61 +42,95 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone <repository-url>
 cd amr-autogen-travel-agent
 
+# Get uv env setup
 uv sync
 ```
 
 ### Step 4: Configure Your Environment
-Create a `.env` file in the project directory (copy from `env.example`):
+Create a `.env` file with your API keys:
 ```bash
 cp env.example .env
 ```
 
-Edit the `.env` file with your actual API keys:
-```bash
-# Required API Keys
-OPENAI_API_KEY=sk-your-openai-api-key-here
-TAVILY_API_KEY=your-tavily-api-key-here
+Edit the `.env` file as needed.
 
-# Optional Configuration (defaults shown)
-REDIS_URL=redis://localhost:6379
-```
-
-### Step 5: Run the Demo
+### Step 5: Launch the Application
 ```bash
 uv run python gradio_app.py
 ```
 
-The app will open at `http://localhost:7860` 🎉
+🎉 **Open [http://localhost:7860](http://localhost:7860)** to start chatting!
 
-The application will automatically:
-- ✅ Validate your configuration and API keys
-- ✅ Check Redis connectivity
-- ✅ Load with responsive UI and memory management
+The application will:
+- ✅ Validate your configuration and API connections
+- ✅ Initialize the dual-layer memory system
+- ✅ Load the user management interface
 
-## 💬 Try These Examples
+## 💬 Demo: Multi-User Memory Isolation
 
-Once the app is running, try asking:
+Test the dual-layer memory system with multiple users:
 
-TBD
+### 👤 User: "Tyler"
+1. **Create user** "Tyler" in the UI
+2. **Chat**: "Plan a 3-day San Francisco trip in October, under $250/night, near transit."
+3. **Chat**: "I prefer boutique hotels and hate red-eye flights."
+4. **Switch away** to another user, then **switch back** to Tyler
+5. **Chat**: "Now plan a weekend in Seattle." 
+   
+   ✨ *Notice: Tyler's preferences are remembered!*
 
-## 🛠️ How It Works
+### 👤 User: "Jane"  
+1. **Create user** "Jane" in the UI
+2. **Chat**: "I want a luxury Paris weekend with 5-star hotels and fine dining."
 
-**Simple Architecture:**
-- **Chat Interface**: Powered by Gradio for the UI
-- **AI Agent**: Uses AutoGen framework with OpenAI GPT
-- **Memory**: Redis stores your learned preferences
-- **Search**: Tavily provides real-time travel information
+   ✨ *Notice: Jane has completely separate preferences from Tyler!*
 
-**Key Files:**
-- `gradio_app.py` - The main UI application
-- `agent.py` - The travel AI agent with memory and tools
-- `config.py` - Configuration management with validation
-- `ui_utils.py` - UI utility functions
-- `assets/styles.css` - UI styling and themes
-- `env.example` - Example environment configuration
-- `pyproject.toml` - Dependencies
+### 🔄 Test Persistence
+- **Restart the app** completely
+- **Switch back to Tyler** - his conversation history and preferences persist
+- **Switch to Jane** - her separate context is also preserved
 
+## 🏗️ Architecture: Dual-Layer Memory System
+
+This demo showcases AutoGen's advanced memory capabilities with a sophisticated dual-layer architecture:
+
+### 🧠 Memory Layers
+
+**Layer 1: Short-Term Memory (Redis)**
+- **Purpose**: Complete conversation history storage
+- **Technology**: Redis-backed `ChatCompletionContext`
+- **Scope**: Per-user chat sessions with full message history
+- **Persistence**: Survives app restarts, immediate retrieval
+
+**Layer 2: Long-Term Memory (TCM)**  -- TO BE PORTED TO REDIS BACKEND
+- **Purpose**: Intelligent preference learning and insights
+- **Technology**: AutoGen's Task-Centric Memory with ChromaDB
+- **Scope**: Cross-conversation learning and preference extraction
+- **Persistence**: Permanent insight storage in `./memory/users/{user_id}/`
+
+### 👥 User Context Management
+
+Each user gets completely isolated contexts:
+
+```python
+# Per-User Context Structure
+UserCtx:
+  ├── Redis Chat History (short-term)
+  ├── TCM Memory Controller (long-term learning)  
+  ├── Teachability Adapter (auto-learning)
+  └── Supervisor Agent (bound to user's memory)
+```
+
+**Flow**: `User Message → Agent → Redis Storage → TCM Learning → Personalized Response`
+
+### 🔧 Key Components
+
+- **`agent.py`**: Core travel agent with dual-layer memory management
+- **`gradio_app.py`**: UI with user session management and chat interface
+- **`memory/redis_chat_completion_context.py`**: Custom Redis-backed chat context
+- **`config.py`**: Configuration management for Redis and OpenAI
+- **`memory/users/{user_id}/`**: Per-user TCM storage directories
 
 ---
 
-**Start chatting and watch your travel preferences get smarter! 🧳✈️**
+**🚀 Ready to see AI memory in action? Start chatting and watch your travel preferences get smarter!**
