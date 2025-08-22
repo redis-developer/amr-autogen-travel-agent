@@ -1,4 +1,3 @@
-# tcm_redis_bank.py
 from __future__ import annotations
 
 import json

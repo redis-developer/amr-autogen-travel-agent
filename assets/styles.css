@@ -416,3 +416,19 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 
+
+/* Simple thinking animation for dots */
+.thinking-animation {
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 60%, 100% {
+        opacity: 1;
+    }
+    30% {
+        opacity: 0.3;
+    }
+}
+
+

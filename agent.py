@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.ui import Console
@@ -186,6 +186,7 @@ class TravelAgent:
             ],
             system_message=self._get_system_message(),
             max_tool_iterations=self.config.max_tool_iterations,
+            model_client_stream=True,     # Enable token streaming
         )
     
     def _get_system_message(self) -> str:
@@ -281,6 +282,81 @@ class TravelAgent:
         except Exception as e:
             print(f"Error during memory retrieval: {e}", flush=True)
             return []
+
+    async def stream_chat_turn(self, user_id: str, user_message: str) -> AsyncGenerator[str, None]:
+        """
+        Yield the growing assistant reply as tokens arrive from the streaming agent.
+        
+        Consumes ctx.supervisor.run_stream(...) and yields partial text as it builds up.
+        Handles token chunks, tool calls, and final messages from the AutoGen stream.
+        
+        Args:
+            user_id: User identifier for context isolation
+            user_message: The user's input message
+            
+        Yields:
+            str: Growing assistant response text as tokens arrive
+        """
+        ctx = self._get_or_create_user_ctx(user_id)
+        stream = ctx.supervisor.run_stream(task=user_message)
+
+        buffer = ""
+        last_yielded = ""
+        tool_feedback_active = False
+        
+        async for event in stream:
+            event_name = event.__class__.__name__
+
+            # Handle token chunks from streaming
+            if event_name == "ModelClientStreamingChunkEvent":
+                chunk = getattr(event, "content", "") or ""
+                if chunk:
+                    buffer += chunk
+                    # Only yield if content actually changed
+                    if buffer != last_yielded:
+                        last_yielded = buffer
+                        yield buffer
+
+            # Handle tool calls with user feedback
+            elif event_name == "FunctionCall":
+                tool_name = getattr(event, "name", "tool")
+                tool_message = buffer + f"\n\n🔧 Calling `{tool_name}`..."
+                tool_feedback_active = True
+                yield tool_message
+                
+            elif event_name == "FunctionExecutionResult":
+                if tool_feedback_active:
+                    completion_message = buffer + "\n\n✅ Tool finished."
+                    tool_feedback_active = False
+                    yield completion_message
+
+            # Handle final LLM message (non-chunk) - only if we haven't been streaming
+            elif event_name == "TextMessage" and getattr(event, "source", "") == "assistant":
+                content = getattr(event, "content", "") or ""
+                # Only use TextMessage content if we haven't been streaming chunks
+                if not buffer and content:
+                    buffer = content
+                    if buffer != last_yielded:
+                        last_yielded = buffer
+                        yield buffer
+
+    async def insights_for_task(self, user_id: str, task_text: str, limit: int = DEFAULT_MAX_MEMOS) -> List[str]:
+        """
+        Retrieve insights that were applied for this specific task.
+        
+        This mirrors what Teachability retrieves and applies internally, providing
+        visibility into which memories influenced the agent's response.
+        
+        Args:
+            user_id: User identifier for context isolation
+            task_text: Current task/message text to find relevant insights for
+            limit: Maximum number of insights to return
+            
+        Returns:
+            List[str]: Relevant insights that were applied for this task
+        """
+        ctx = self._get_or_create_user_ctx(user_id)
+        return await self._relevant_insights_for_task(ctx.controller, task_text, limit)
 
     async def chat(self, user_message: str, user_id: Optional[str] = None) -> str:
         """Process a chat message and return the agent's response.

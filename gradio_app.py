@@ -1,8 +1,7 @@
 import asyncio
 import gradio as gr
 import os
-from typing import List, Tuple, Optional, Dict
-import uuid
+from typing import List, Dict
 from pathlib import Path
 
 from agent import TravelAgent
@@ -30,7 +29,9 @@ class TravelAgentUI:
         """Initialize the UI with a travel agent instance."""
         self.config = config or get_config()
         self.agent = TravelAgent(config=self.config)
-        self.current_user_id = None  # Currently selected user
+        self.current_user_id = "Tyler"  # Hardcoded user ID
+        # Initialize the user context
+        self.agent._get_or_create_user_ctx(self.current_user_id)
     
     async def chat_with_agent(self, message: str) -> List[dict]:
         """
@@ -42,9 +43,8 @@ class TravelAgentUI:
         Returns:
             Complete chat history from Redis for the current user
         """
-        # Ensure we have a selected user
-        if not self.current_user_id:
-            return [{"role": "assistant", "content": "Please select a user first."}]
+        # Using hardcoded user Tyler
+        # No need to check for user selection since it's hardcoded
         
         try:
             # Send message to agent (it handles adding to Redis automatically)
@@ -64,86 +64,11 @@ class TravelAgentUI:
             except:
                 return [{"role": "assistant", "content": error_msg}]
     
-    def create_new_user(self, user_id_input: str) -> Tuple[gr.update, List[dict], str]:
-        """
-        Create a new user and switch to them.
-        
-        Args:
-            user_id_input: User ID entered by user (can be empty)
-            
-        Returns:
-            Tuple of (updated_user_list, empty_chat_history, status_message)
-        """
-        # Use provided user ID or generate a new one
-        if user_id_input.strip():
-            new_user_id = user_id_input.strip()
-        else:
-            # Generate a UUID for anonymous users
-            new_user_id = str(uuid.uuid4())[:8]  # Use first 8 chars for readability
-        
-        # Check if user already exists in the agent
-        if self.agent.user_exists(new_user_id):
-            return gr.update(), []
-        
-        # Create new user by making the agent initialize context for them
-        self.current_user_id = new_user_id
-        # Actually create the user context in the agent
-        self.agent._get_or_create_user_ctx(new_user_id)
-        
-        # Update user list from agent (should now include the new user)
-        user_choices = self.agent.get_user_list()
-        
-        return gr.update(choices=user_choices, value=new_user_id), []
+    # User management methods removed - using hardcoded Tyler user
     
-    async def switch_user(self, selected_user_id: str) -> Tuple[List[dict], str]:
-        """
-        Switch to a different user.
-        
-        Args:
-            selected_user_id: The user ID to switch to
-            
-        Returns:
-            Tuple of (chat_history_for_user, status_message)
-        """
-        if not selected_user_id or not self.agent.user_exists(selected_user_id):
-            return [], ""
-        
-        self.current_user_id = selected_user_id
-        
-        # Load chat history from Redis
-        try:
-            chat_history = await self.agent.get_chat_history(selected_user_id, n=-1)
-        except Exception as e:
-            print(f"Error loading chat history for user {selected_user_id}: {e}")
-            chat_history = []
-        
-        return chat_history, ""
+
     
-    def delete_user(self, user_to_delete: str) -> Tuple[gr.update, List[dict], str]:
-        """
-        Delete a user and their chat history.
-        
-        Args:
-            user_to_delete: The user ID to delete
-            
-        Returns:
-            Tuple of (updated_user_list, empty_chat_history, status_message)
-        """
-        if not user_to_delete or not self.agent.user_exists(user_to_delete):
-            return gr.update(), []
-        
-        # Don't allow deleting the currently selected user
-        if user_to_delete == self.current_user_id:
-            return gr.update(), []
-        
-        # Delete user from agent (this clears their memory and context)
-        self.agent.reset_user_memory(user_to_delete)
-        
-        # Update user list
-        user_choices = self.agent.get_user_list()
-        new_value = self.current_user_id if self.current_user_id in user_choices else (user_choices[0] if user_choices else None)
-        
-        return gr.update(choices=user_choices, value=new_value), []
+
     
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user."""
@@ -243,48 +168,13 @@ class TravelAgentUI:
                         Your intelligent travel planning assistant powered by AutoGen & TCM
                     </p>
                     <p style="color: #8A99A0; font-size: 14px;">
-                        Create users, switch between them, and maintain separate travel conversations!
+                        Your personal travel planning assistant ready to help!
                     </p>
                 </div>
             """)
             
-            # Main two-column layout
-            with gr.Row():
-                # Left Column - User Management
-                with gr.Column(scale=1, min_width=300):
-                    gr.HTML("""
-                        <div style="text-align: center; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #163341 0%, #091A23 100%); border-radius: 8px;">
-                            <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">👥 User Management</h3>
-                        </div>
-                    """)
-                    
-                    # Create new user section
-                    gr.HTML("<h4 style='color: #FFFFFF; margin: 15px 0 10px 0; font-size: 14px; font-weight: 500;'>✨ Create New User</h4>")
-                    with gr.Row():
-                        new_user_input = gr.Textbox(
-                            placeholder="Enter User ID (leave empty for auto-generated)",
-                            show_label=False,
-                            scale=3,
-                            container=False
-                        )
-                        create_user_btn = gr.Button("Create", variant="primary", scale=1)
-                    
-                    # User list section
-                    gr.HTML("<h4 style='color: #FFFFFF; margin: 20px 0 10px 0; font-size: 14px; font-weight: 500;'>🗣️ Select Active User</h4>")
-                    user_list = gr.Dropdown(
-                        choices=[],
-                        value=None,
-                        label="",
-                        interactive=True,
-                        allow_custom_value=False,
-                        show_label=False
-                    )
-                    delete_user_btn = gr.Button("Delete Selected User", variant="secondary", size="sm")
-                    
-
-                
-                # Right Column - Chat Interface
-                with gr.Column(scale=2):
+            # Main single-column layout for chat interface
+            with gr.Column():
                     gr.HTML("""
                         <div style="text-align: center; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #163341 0%, #091A23 100%); border-radius: 8px;">
                             <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">💬 Chat Interface</h3>
@@ -305,7 +195,7 @@ class TravelAgentUI:
                     # Input components
                     with gr.Row():
                         msg = gr.Textbox(
-                            placeholder="Select a user first, then ask me about planning your next trip...",
+                            placeholder="Ask me about planning your next trip...",
                             show_label=False,
                             container=False,
                             scale=5,
@@ -316,127 +206,76 @@ class TravelAgentUI:
                     
                     # Control buttons
                     with gr.Row():
-                        clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")    
+                        clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")
             
             
             # Event handler functions
-            async def handle_chat_start(message, history):
-                """Show typing indicator when chat starts."""
+            async def handle_streaming_chat(message, history):
+                """Handle streaming chat with console logging for insights."""
                 if not message.strip():
-                    return "", history
+                    yield history
+                    return
                 
-                # Add user message and typing indicator immediately
-                updated_history = history + [
-                    {"role": "user", "content": message},
-                    {"role": "assistant", "content": "Thinking..."}
-                ]
-                return "", updated_history
+                # Add user message to history and show it immediately
+                history = history + [{"role": "user", "content": message}]
+                yield history
+                
+                # Initialize assistant message with animated thinking dots
+                history = history + [{"role": "assistant", "content": '<span class="thinking-animation">●●●</span>'}]
+                yield history
+                
+                try:
+                    # Stream the response
+                    async for partial_response in self.agent.stream_chat_turn(self.current_user_id, message):
+                        # Update the last assistant message with the streaming content
+                        history[-1] = {"role": "assistant", "content": partial_response}
+                        yield history
+                    
+                    # After streaming is complete, log insights to console
+                    insights = await self.agent.insights_for_task(self.current_user_id, message, limit=4)
+                    
+                    if insights:
+                        print(f"\n🧠 INSIGHTS APPLIED (user: {self.current_user_id}) 🧠", flush=True)
+                        for insight in insights:
+                            print(f"• {insight}", flush=True)
+                        print("--- END INSIGHTS ---\n", flush=True)
+                    else:
+                        print(f"--- NO INSIGHTS APPLIED (user: {self.current_user_id}) ---\n", flush=True)
+                    
+                except Exception as e:
+                    error_msg = f"Sorry, I encountered an error: {str(e)}"
+                    # Replace thinking indicator with error message
+                    history[-1] = {"role": "assistant", "content": error_msg}
+                    print(f"❌ Error during streaming chat: {e}", flush=True)
+                    yield history
             
-            async def handle_chat_complete(message, history):
-                """Complete the chat interaction."""
-                
-                # Extract the actual message from history since the message parameter gets cleared
-                if not history or len(history) < 2:
-                    return history
-                
-                # Get the user message from history (should be second to last, before "Thinking...")
-                user_message = None
-                if history[-1]["content"] == "Thinking..." and len(history) >= 2:
-                    user_message = history[-2]["content"]
-                
-                if not user_message:
-                    return history
-                
-                # Send message to agent and get updated history from Redis
-                updated_history = await self.chat_with_agent(user_message)
-                return updated_history
+            # User management handlers removed - using hardcoded Tyler user
             
-            def handle_create_user(user_id_input):
-                """Handle creating a new user."""
-                updated_user_list, empty_chat = self.create_new_user(user_id_input)
-                
-                return (
-                    updated_user_list,  # user_list
-                    empty_chat,  # chatbot
-                    ""  # clear new_user_input
-                )
+
             
-            async def handle_switch_user(selected_user_id):
-                """Handle switching to a different user."""
-                chat_history, _ = await self.switch_user(selected_user_id)
-                
-                return chat_history  # chatbot
+
             
-            def handle_delete_user(selected_user_id):
-                """Handle deleting a user."""
-                updated_user_list, empty_chat = self.delete_user(selected_user_id)
-                
-                return updated_user_list  # user_list
+            # Event handlers for chat - streaming version
+            async def handle_submit_and_clear(message, history):
+                """Handle message submission and immediately clear input."""
+                async for result in handle_streaming_chat(message, history):
+                    yield result, ""
             
-            # Event handlers for chat
             msg.submit(
-                handle_chat_start,
+                handle_submit_and_clear,
                 [msg, chatbot],
-                [msg, chatbot],
-                queue=True
-            ).then(
-                handle_chat_complete,
-                [msg, chatbot],
-                [chatbot],
+                [chatbot, msg],
                 queue=True
             )
             
             send_btn.click(
-                handle_chat_start,
+                handle_submit_and_clear,
                 [msg, chatbot],
-                [msg, chatbot],
-                queue=True
-            ).then(
-                handle_chat_complete,
-                [msg, chatbot],
-                [chatbot],
+                [chatbot, msg],
                 queue=True
             )
             
-            # User management handlers
-            create_user_btn.click(
-                handle_create_user,
-                inputs=[new_user_input],
-                outputs=[
-                    user_list,
-                    chatbot,
-                    new_user_input
-                ],
-                queue=False
-            )
-            
-            # Allow Enter key in new user input to create user
-            new_user_input.submit(
-                handle_create_user,
-                inputs=[new_user_input],
-                outputs=[
-                    user_list,
-                    chatbot,
-                    new_user_input
-                ],
-                queue=False
-            )
-            
-            # User selection handler
-            user_list.change(
-                handle_switch_user,
-                inputs=[user_list],
-                outputs=[chatbot],
-                queue=False
-            )
-            
-            # Delete user handler
-            delete_user_btn.click(
-                handle_delete_user,
-                inputs=[user_list],
-                outputs=[user_list],
-                queue=False
-            )
+            # User management handlers removed - using hardcoded Tyler user
             
             # Clear chat functionality
             async def handle_clear_chat():
