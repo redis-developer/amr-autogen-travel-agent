@@ -134,3 +134,26 @@ UserCtx:
 ---
 
 **🚀 Ready to see AI memory in action? Start chatting and watch your travel preferences get smarter!**
+
+---
+
+## 🔐 (Optional) Azure APIM Gen-AI Gateway
+
+You can route ALL model calls through an Azure API Management (APIM) Gen-AI Gateway that exposes an OpenAI-compatible endpoint. This lets you centralize policies like authentication, rate-limits, prompt safety, and usage analytics without changing application code paths.
+
+How this app integrates:
+- When `GENAI_GATEWAY_ENABLED=true`, the app sets `OPENAI_BASE_URL` to `GENAI_GATEWAY_BASE_URL` and uses `GENAI_GATEWAY_API_KEY` as the `OPENAI_API_KEY`.
+- The AutoGen OpenAI client (`OpenAIChatCompletionClient`) reads these env vars and sends all requests via APIM.
+
+Env variables in `.env`:
+```
+GENAI_GATEWAY_ENABLED=true
+GENAI_GATEWAY_BASE_URL=https://<apim-name>.azure-api.net/v1
+GENAI_GATEWAY_API_KEY=<your-apim-subscription-key>
+# Optional if your gateway requires it as a query string
+GENAI_GATEWAY_API_VERSION=2024-06-01-preview
+```
+
+Notes:
+- Ensure your APIM endpoint is OpenAI-compatible and typically includes `/v1`.
+- If you disable the gateway (default), the app will use `OPENAI_API_KEY` directly against OpenAI.
