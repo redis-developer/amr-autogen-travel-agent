@@ -74,7 +74,16 @@ class TravelAgent:
         self.config = config
 
         # Set environment variables for SDK clients
-        os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        # Route OpenAI traffic through Azure APIM Gen-AI Gateway if enabled
+        if getattr(config, "genai_gateway_enabled", False):
+            if config.genai_gateway_api_key:
+                os.environ["OPENAI_API_KEY"] = config.genai_gateway_api_key
+            if config.genai_gateway_base_url:
+                # Expect an OpenAI-compatible base URL (often ends with '/v1')
+                os.environ["OPENAI_BASE_URL"] = config.genai_gateway_base_url
+        else:
+            os.environ["OPENAI_API_KEY"] = config.openai_api_key
+            # Do not force OPENAI_BASE_URL when not using gateway; leave default
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
 
         # Initialize shared clients
