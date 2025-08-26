@@ -5,7 +5,7 @@ A sophisticated AI travel planning assistant showcasing AutoGen's advanced memor
 ## 🧠 What's included?
 
 - **🎯 Dual-Layer Memory**: Short-term chat history (Redis) + Long-term learning (TCM)
-- **👥 User Isolation**: Each user gets completely separate memory contexts
+- **👥 User Isolation**: Pre-seeded users get completely separate memory contexts
 - **🔄 Session Persistence**: Your conversations and preferences survive app restarts
 - **📚 Intelligent Learning**: The agent learns your travel preferences automatically
 - **🌐 Real-time Search**: Live travel information via Tavily search API
@@ -66,70 +66,19 @@ The application will:
 - ✅ Initialize the dual-layer memory system
 - ✅ Load the user management interface
 
-## 💬 Demo: Multi-User Memory Isolation
+## 👤 User Profile Configuration
 
-Test the dual-layer memory system with multiple users:
+The demo comes with pre-configured user profiles (Tyler and Amanda) that have distinct travel preferences. You can easily customize these or add new profiles by editing `context/seed.json`.
 
-### 👤 User: "Tyler"
-1. **Create user** "Tyler" in the UI
-2. **Chat**: "Plan a 3-day San Francisco trip in October, under $250/night, near transit."
-3. **Chat**: "I prefer boutique hotels and hate red-eye flights."
-4. **Switch away** to another user, then **switch back** to Tyler
-5. **Chat**: "Now plan a weekend in Seattle." 
-   
-   ✨ *Notice: Tyler's preferences are remembered!*
+### Current Profiles
 
-### 👤 User: "Jane"  
-1. **Create user** "Jane" in the UI
-2. **Chat**: "I want a luxury Paris weekend with 5-star hotels and fine dining."
+**Tyler** 🎒 *The Adventure Eco-Warrior*
+- Budget-friendly backpacking and extreme sports enthusiast
+- Passionate about sustainable travel and environmental conservation
 
-   ✨ *Notice: Jane has completely separate preferences from Tyler!*
-
-### 🔄 Test Persistence
-- **Restart the app** completely
-- **Switch back to Tyler** - his conversation history and preferences persist
-- **Switch to Jane** - her separate context is also preserved
-
-## 🏗️ Architecture: Dual-Layer Memory System
-
-This demo showcases AutoGen's advanced memory capabilities with a sophisticated dual-layer architecture:
-
-### 🧠 Memory Layers
-
-**Layer 1: Short-Term Memory (Redis)**
-- **Purpose**: Complete conversation history storage
-- **Technology**: Redis-backed `ChatCompletionContext`
-- **Scope**: Per-user chat sessions with full message history
-- **Persistence**: Survives app restarts, immediate retrieval
-
-**Layer 2: Long-Term Memory (TCM)**  -- TO BE PORTED TO REDIS BACKEND
-- **Purpose**: Intelligent preference learning and insights
-- **Technology**: AutoGen's Task-Centric Memory with ChromaDB
-- **Scope**: Cross-conversation learning and preference extraction
-- **Persistence**: Permanent insight storage in `./memory/users/{user_id}/`
-
-### 👥 User Context Management
-
-Each user gets completely isolated contexts:
-
-```python
-# Per-User Context Structure
-UserCtx:
-  ├── Redis Chat History (short-term)
-  ├── TCM Memory Controller (long-term learning)  
-  ├── Teachability Adapter (auto-learning)
-  └── Supervisor Agent (bound to user's memory)
-```
-
-**Flow**: `User Message → Agent → Redis Storage → TCM Learning → Personalized Response`
-
-### 🔧 Key Components
-
-- **`agent.py`**: Core travel agent with dual-layer memory management
-- **`gradio_app.py`**: UI with user session management and chat interface
-- **`memory/redis_chat_completion_context.py`**: Custom Redis-backed chat context
-- **`config.py`**: Configuration management for Redis and OpenAI
-- **`memory/users/{user_id}/`**: Per-user TCM storage directories
+**Amanda** 🏨 *The Luxury Culture Connoisseur*
+- Premium experiences with five-star accommodations and fine dining
+- Art, culture, and history enthusiast who loves museums and guided tours
 
 ---
 

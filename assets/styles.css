@@ -309,6 +309,16 @@ h1, h2, h3, h4, h5, h6 {
 
 
 
+/* Final override: selected user shows purple border only (no background change) */
+.user-selector [aria-checked="true"],
+.user-selector .selected,
+.user-selector input[type="radio"]:checked + label {
+    border-color: var(--violet) !important;
+    box-shadow: 0 0 0 2px var(--violet) !important;
+    background-color: var(--dusk-90p) !important;
+    color: var(--white) !important;
+}
+
 /* Memory panel specific styling */
 .memory-content {
     height: 100% !important;
@@ -429,6 +439,43 @@ h1, h2, h3, h4, h5, h6 {
     30% {
         opacity: 0.3;
     }
+}
+
+/* Segmented control centering */
+.user-selector-container { justify-content: center !important; }
+
+
+
+/* Events panel styling */
+.event-card {
+    background: #0e2631;
+    border: 1px solid #264a5a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 8px 0;
+}
+
+.event-title {
+    color: #dcff1e;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.event-meta {
+    color: #8a99a0;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.event-message {
+    color: #ffffff;
+    font-size: 12px;
+    margin-top: 6px;
+    white-space: pre-wrap;
+}/* Make Agent Logs panel scrollable similar to chat */
+#events-panel {
+    max-height: 500px !important;
+    overflow-y: auto !important;
 }
 
 
