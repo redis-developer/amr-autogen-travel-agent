@@ -278,7 +278,6 @@ class RedisMemoryBank:
             "ts": int(time.time()),
             "embedding": emb,
         }
-        print("MEMO ROW", row, flush=True)
         self.index.load([row], id_field="memo_id")
         
         if self.logger:

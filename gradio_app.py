@@ -29,59 +29,58 @@ class TravelAgentUI:
         """Initialize the UI with a travel agent instance."""
         self.config = config or get_config()
         self.agent = TravelAgent(config=self.config)
-        self.current_user_id = "Tyler"  # Hardcoded user ID
-        # Initialize the user context
-        self.agent._get_or_create_user_ctx(self.current_user_id)
+        self.current_user_id = "Tyler"  # Default user ID
+        self.initial_history = []  # Will be populated async
     
-    async def chat_with_agent(self, message: str) -> List[dict]:
-        """
-        Handle chat interaction with the travel agent.
+    async def initialize_chat_history(self):
+        """Load initial chat history for the default user."""
+        try:
+            self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
+            print(f"✅ Loaded {len(self.initial_history)} initial messages for user: {self.current_user_id}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not load initial chat history: {e}")
+            self.initial_history = []
+
+    
+    async def switch_user(self, new_user_id: str) -> List[dict]:
+        """Switch to a different user profile and load their chat history.
         
         Args:
-            message: User's input message
+            new_user_id: The user ID to switch to
             
         Returns:
-            Complete chat history from Redis for the current user
+            Chat history for the new user
         """
-        # Using hardcoded user Tyler
-        # No need to check for user selection since it's hardcoded
+        if new_user_id == self.current_user_id:
+            # No change needed, return current history
+            return await self.agent.get_chat_history(self.current_user_id, n=-1)
         
-        try:
-            # Send message to agent (it handles adding to Redis automatically)
-            await self.agent.chat(message, user_id=self.current_user_id)
-            
-            # Retrieve updated chat history from Redis
-            history = await self.agent.get_chat_history(self.current_user_id, n=-1)
-            return history
-            
-        except Exception as e:
-            error_msg = f"Sorry, I encountered an error: {str(e)}"
-            # Get current history and add error message
-            try:
-                history = await self.agent.get_chat_history(self.current_user_id, n=-1)
-                history.append({"role": "assistant", "content": error_msg})
-                return history
-            except:
-                return [{"role": "assistant", "content": error_msg}]
-    
-    # User management methods removed - using hardcoded Tyler user
+        # Switch to the new user
+        self.current_user_id = new_user_id
+        
+        # Initialize the new user context (this will preseed if needed)
+        self.agent._get_or_create_user_ctx(new_user_id)
+        
+        # Return the new user's chat history
+        return await self.agent.get_chat_history(new_user_id, n=-1)
     
 
     
 
     
     async def clear_chat_history(self) -> List[dict]:
-        """Clear chat history for the current user."""
+        """Clear chat history for the current user from Redis and UI."""
         if not self.current_user_id:
             return []
         
         try:
             # Get the user context and clear its Redis history
             ctx = self.agent._get_or_create_user_ctx(self.current_user_id)
-            await ctx.supervisor.model_context.clear()
+            await ctx.agent.model_context.clear()
+            print(f"✅ Cleared chat history for user: {self.current_user_id}")
             return []
         except Exception as e:
-            print(f"Error clearing chat history for user {self.current_user_id}: {e}")
+            print(f"❌ Error clearing chat history for user {self.current_user_id}: {e}")
             return []
     
     def create_interface(self) -> gr.Interface:
@@ -162,27 +161,38 @@ class TravelAgentUI:
             
             # Header
             gr.HTML("""
-                <div style="text-align: center; margin: 20px 0; font-family: 'Space Grotesk', sans-serif;">
+                <div style="text-align: center; margin: 8px 0; font-family: 'Space Grotesk', sans-serif;">
                     <h1 style="color: #FFFFFF; margin-bottom: 10px; font-weight: 500;">🌍 AI Travel Concierge</h1>
                     <p style="color: #DCFF1E; font-size: 18px; font-weight: 500;">
-                        Your intelligent travel planning assistant powered by AutoGen & TCM
+                        Your intelligent travel planning assistant powered by AI & Long Term Memory
                     </p>
                     <p style="color: #8A99A0; font-size: 14px;">
-                        Your personal travel planning assistant ready to help!
+                        Built on Redis, Autogen, Tavily, and OpenAI
                     </p>
                 </div>
             """)
             
-            # Main single-column layout for chat interface
-            with gr.Column():
+            # User Profile Switcher (top)
+            with gr.Row(elem_classes=["user-selector-container"], equal_height=True):
+                with gr.Tabs(selected=0) as user_tabs:
+                    with gr.Tab("Tyler") as tyler_tab:
+                        pass
+                    with gr.Tab("Amanda") as amanda_tab:
+                        pass
+            
+            # Two-column layout: Chat (left 70%) and Agent Logs (right 30%)
+            with gr.Row(equal_height=False, variant="panel"):
+                # Chat Column (70% width)
+                with gr.Column(scale=7, min_width=0):
+                    
                     gr.HTML("""
                         <div style="text-align: center; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #163341 0%, #091A23 100%); border-radius: 8px;">
-                            <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">💬 Chat Interface</h3>
+                            <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">💬 Chat</h3>
                         </div>
                     """)
                     
                     chatbot = gr.Chatbot(
-                        [],
+                        value=self.initial_history,
                         show_label=False,
                         container=True,
                         type="messages",
@@ -207,96 +217,162 @@ class TravelAgentUI:
                     # Control buttons
                     with gr.Row():
                         clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")
+
+                # Agent Logs Panel (30% width)
+                with gr.Column(scale=3, min_width=0):
+                    gr.HTML("""
+                        <div style="text-align: center; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #163341 0%, #091A23 100%); border-radius: 8px;">
+                            <h3 style="color: #DCFF1E; margin: 0; font-size: 16px;">🛈 Agent Logs</h3>
+                        </div>
+                    """)
+                    events_state = gr.State([])
+                    events_panel = gr.HTML(
+                        value="""
+                        <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                            <div style="text-align: center; margin-top: 200px;">
+                                <p>🤖 Agent events will appear here during chat</p>
+                            </div>
+                        </div>
+                        """, 
+                        elem_id="events-panel"
+                    )
             
             
             # Event handler functions
-            async def handle_streaming_chat(message, history):
-                """Handle streaming chat with console logging for insights."""
+            async def handle_streaming_chat(message, history, events):
+                """Handle streaming chat and side-panel event rendering."""
                 if not message.strip():
-                    yield history
+                    events_html = ""
+                    yield history, events, events_html
                     return
                 
                 # Add user message to history and show it immediately
                 history = history + [{"role": "user", "content": message}]
-                yield history
+                # Clear events at the start of each new submit
+                events = []
+                yield history, events, ""
                 
                 # Initialize assistant message with animated thinking dots
                 history = history + [{"role": "assistant", "content": '<span class="thinking-animation">●●●</span>'}]
-                yield history
+                events_html = "".join([e.get("html", "") for e in events[-200:]])
+                yield history, events, events_html
                 
                 try:
-                    # Stream the response
-                    async for partial_response in self.agent.stream_chat_turn(self.current_user_id, message):
-                        # Update the last assistant message with the streaming content
+                    # Stream the response with events
+                    async for partial_response, evt in self.agent.stream_chat_turn_with_events(self.current_user_id, message):
+                        # Keep the thinking dots visible while streaming
                         history[-1] = {"role": "assistant", "content": partial_response}
-                        yield history
-                    
-                    # After streaming is complete, log insights to console
-                    insights = await self.agent.insights_for_task(self.current_user_id, message, limit=4)
-                    
-                    if insights:
-                        print(f"\n🧠 INSIGHTS APPLIED (user: {self.current_user_id}) 🧠", flush=True)
-                        for insight in insights:
-                            print(f"• {insight}", flush=True)
-                        print("--- END INSIGHTS ---\n", flush=True)
-                    else:
-                        print(f"--- NO INSIGHTS APPLIED (user: {self.current_user_id}) ---\n", flush=True)
+                        # Append new event if any
+                        if evt is not None:
+                            events = events + [evt]
+                        # Render compact HTML for events
+                        events_html = "".join([e.get("html", "") for e in events[-200:]])
+                        yield history, events, events_html
                     
                 except Exception as e:
                     error_msg = f"Sorry, I encountered an error: {str(e)}"
                     # Replace thinking indicator with error message
                     history[-1] = {"role": "assistant", "content": error_msg}
                     print(f"❌ Error during streaming chat: {e}", flush=True)
-                    yield history
+                    events_html = "".join([e.get("html", "") for e in events[-200:]])
+                    yield history, events, events_html
             
-            # User management handlers removed - using hardcoded Tyler user
-            
-
-            
-
             
             # Event handlers for chat - streaming version
-            async def handle_submit_and_clear(message, history):
+            async def handle_submit_and_clear(message, history, events):
                 """Handle message submission and immediately clear input."""
-                async for result in handle_streaming_chat(message, history):
-                    yield result, ""
+                async for h, ev, html in handle_streaming_chat(message, history, events):
+                    yield h, ev, html, ""
             
             msg.submit(
                 handle_submit_and_clear,
-                [msg, chatbot],
-                [chatbot, msg],
+                [msg, chatbot, events_state],
+                [chatbot, events_state, events_panel, msg],
                 queue=True
             )
             
             send_btn.click(
                 handle_submit_and_clear,
-                [msg, chatbot],
-                [chatbot, msg],
+                [msg, chatbot, events_state],
+                [chatbot, events_state, events_panel, msg],
                 queue=True
             )
             
-            # User management handlers removed - using hardcoded Tyler user
+            # User switcher handlers via Tabs
+            async def handle_tab_tyler():
+                try:
+                    history = await self.switch_user("Tyler")
+                    # Reset events panel to initial state
+                    initial_events_html = """
+                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                        <div style="text-align: center; margin-top: 200px;">
+                            <p>🤖 Agent events will appear here during chat</p>
+                        </div>
+                    </div>
+                    """
+                    return history, [], initial_events_html, ""
+                except Exception as e:
+                    print(f"Error switching to user Tyler: {e}")
+                    return [], [], "", ""
+
+            async def handle_tab_amanda():
+                try:
+                    history = await self.switch_user("Amanda")
+                    # Reset events panel to initial state
+                    initial_events_html = """
+                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                        <div style="text-align: center; margin-top: 200px;">
+                            <p>🤖 Agent events will appear here during chat</p>
+                        </div>
+                    </div>
+                    """
+                    return history, [], initial_events_html, ""
+                except Exception as e:
+                    print(f"Error switching to user Amanda: {e}")
+                    return [], [], "", ""
+
+            tyler_tab.select(
+                handle_tab_tyler,
+                outputs=[chatbot, events_state, events_panel, msg],
+                queue=True
+            )
+
+            amanda_tab.select(
+                handle_tab_amanda,
+                outputs=[chatbot, events_state, events_panel, msg],
+                queue=True
+            )
             
             # Clear chat functionality
             async def handle_clear_chat():
-                """Handle clearing chat history."""
+                """Handle clearing chat history from Redis and UI."""
                 cleared_history = await self.clear_chat_history()
-                return cleared_history, ""
+                # Reset events panel to initial state
+                initial_events_html = """
+                <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                    <div style="text-align: center; margin-top: 200px;">
+                        <p>🤖 Agent events will appear here during chat</p>
+                    </div>
+                </div>
+                """
+                return cleared_history, [], initial_events_html, ""
             
             clear_btn.click(
                 handle_clear_chat,
-                outputs=[chatbot, msg],
+                outputs=[chatbot, events_state, events_panel, msg],
                 queue=True
             )
         
         return interface
 
 
-def create_app(config=None) -> gr.Interface:
+async def create_app(config=None) -> gr.Interface:
     """Create and return the Gradio app."""
     if config is None:
         config = get_config()
     ui = TravelAgentUI(config=config)
+    # Initialize chat history before creating interface
+    await ui.initialize_chat_history()
     return ui.create_interface()
 
 
@@ -318,7 +394,9 @@ def main():
     
     # Create and launch the app
     try:
-        app = create_app(config)
+        # Use asyncio to handle async app creation
+        import asyncio
+        app = asyncio.run(create_app(config))
         
         print(f"\n🚀 Launching AI Travel Concierge on {config.server_name}:{config.server_port}")
         

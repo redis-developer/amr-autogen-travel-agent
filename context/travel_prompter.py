@@ -9,7 +9,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 class TravelPrompter(Prompter):
     """
-    Narrow advice extraction to durable travel preferences and normalize topics/tags for retrieval.
+    Narrow advice extraction to durable, time-agnostic travel preferences and normalize topics/tags for retrieval.
     """
     async def extract_advice(self, text: str) -> str | None:
         """
@@ -17,7 +17,7 @@ class TravelPrompter(Prompter):
         Example return: "[pref.airline]=Delta; prefers aisle seats"
         """
         sys_message = (
-            "You extract durable, user-specific travel preferences only. "
+            "You extract durable, user-specific travel preferences only. Ignore time-sensitive facts (prices, availability, temporary events). "
             "If none exist, reply exactly: NONE. "
             "If found, output ONE short sentence, declarative, no hedging. "
             "Prefer normalized tags like [pref.airline],[pref.seat],[pref.hotel],[pref.dietary],"
@@ -43,11 +43,11 @@ class TravelPrompter(Prompter):
         Use a quick LLM gate to keep only preference-like insights that help travel planning.
         """
         sys_message = (
-            "You validate whether a short text is a durable user travel preference "
+            "You validate whether a short text is a durable, time-agnostic user travel preference "
             "useful for future trip planning. Return exactly YES or NO."
         )
         user_message = [
-            "Criteria for YES: user-specific, durable (not one-off), and relevant to travel logistics "
+            "Criteria for YES: user-specific, durable (not one-off), time-agnostic, and relevant to travel logistics "
             "(airline/hotel loyalty, seat/dietary, budget, time-of-day, airport, accessibility, favorite activities). "
             "Otherwise NO."
         ]
