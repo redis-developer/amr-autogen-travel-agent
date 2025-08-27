@@ -6,8 +6,21 @@ from pathlib import Path
 
 from agent import TravelAgent
 from config import get_config, validate_dependencies
+from auth.entra import get_redis_client
 
+_redis_client = None
+_config = get_config()
+_redis_host = _config.redis_host
+_redis_port = _config.redis_port
 
+def get_redis():
+    """Lazy singleton Redis client using entra.py"""
+    global _redis_client
+    if _redis_client is None:
+        print("[app] creating Redis client…")
+        
+        _redis_client = get_redis_client(_redis_host, _redis_port)
+    return _redis_client
 
 def load_css() -> str:
     """Load CSS from external file."""
@@ -28,7 +41,7 @@ class TravelAgentUI:
     def __init__(self, config=None):
         """Initialize the UI with a travel agent instance."""
         self.config = config or get_config()
-        self.agent = TravelAgent(config=self.config)
+        self.agent = TravelAgent(config=self.config, redis_client_factory=get_redis)
         self.current_user_id = "Tyler"  # Default user ID
         self.initial_history = []  # Will be populated async
     
@@ -63,10 +76,6 @@ class TravelAgentUI:
         
         # Return the new user's chat history
         return await self.agent.get_chat_history(new_user_id, n=-1)
-    
-
-    
-
     
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user from Redis and UI."""

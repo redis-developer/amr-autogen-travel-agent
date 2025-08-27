@@ -20,8 +20,9 @@ class AppConfig(BaseSettings):
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
     
     # Redis Configuration
-    redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL", description="Redis connection URL")
-    
+    redis_host: str = Field(default="localhost", env="REDIS_HOST", description="Redis host URL")
+    redis_port: str = Field(default="6379", env="REDIS_PORT", description="Redis port")
+
     # Server Configuration
     server_name: str = Field(default="0.0.0.0", env="SERVER_NAME", description="Server host")
     server_port: int = Field(default=7860, env="SERVER_PORT", description="Server port")

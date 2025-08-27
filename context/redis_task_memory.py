@@ -6,9 +6,10 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-
 import numpy as np
 import redis
+
+from auth.entra import get_redis_client  # single public helper
 
 from autogen_ext.experimental.task_centric_memory import MemoryController as _BaseMemoryController
 from autogen_ext.experimental.task_centric_memory._memory_bank import Memo
@@ -51,7 +52,7 @@ class RedisMemoryBank:
         *,
         namespace: str,
         vectorizer: BaseVectorizer, 
-        redis_url: str = "redis://localhost:6379",
+        redis_client: Optional[redis.Redis] = None,
         distance_threshold: float = 0.7,        # Match base class default
         n_results: int = 25,                    # Match base class default  
         relevance_conversion_threshold: float = 1.7,  # Restored from base class
@@ -63,7 +64,7 @@ class RedisMemoryBank:
         self.namespace = namespace.strip().replace(" ", "_") or "default"
         self.prefix = f"memory:{self.namespace}"      # key prefix for memo docs
         self.index_name = self.prefix
-        self.redis_url = redis_url
+        self.redis_client = redis_client
         self.distance_threshold = distance_threshold
         self.n_results = n_results
         self.relevance_conversion_threshold = relevance_conversion_threshold
@@ -71,8 +72,7 @@ class RedisMemoryBank:
         self.logger = logger
         
         # Track last memo ID like base class - use Redis counter for persistence
-        self.memo_counter_key = f"{self.prefix}:memo_counter"
-        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self.memo_counter_key = f"{self.prefix}:memo_counter"  
 
         schema = {
             "index": {
@@ -94,9 +94,15 @@ class RedisMemoryBank:
                 },
             ],
         }
+       
         self.index = SearchIndex.from_dict(schema, redis_client=self.redis_client)
-        # idempotent create / reset
-        self.index.create(overwrite=True if reset else False, drop=True if reset else False)
+
+        try:
+            # idempotent create / reset
+            self.index.create(overwrite=True if reset else False, drop=True if reset else False)
+        except Exception as e:
+            print(f"FT.INFO failed: {e}")
+            return
 
         if reset:
             self.reset()
@@ -305,7 +311,7 @@ class RedisMemoryController(_BaseMemoryController):
         *,
         logger: Optional[PageLogger] = None,
         config: Optional[dict] = None,
-        redis_url: str = "redis://localhost:6379",
+        redis_client: Optional[redis.Redis] = None,
         vectorizer: Optional[object] = None,
         task_assignment_callback=None,
     ) -> None:
@@ -320,7 +326,7 @@ class RedisMemoryController(_BaseMemoryController):
         # Recreate with Redis-backed bank using namespace for isolation
         self.memory_bank = RedisMemoryBank(
             namespace=namespace,
-            redis_url=redis_url,
+            redis_client=redis_client,
             vectorizer=vectorizer,
             reset=reset,
             logger=logger,

@@ -5,3 +5,5 @@ __pycache__/
 context/logs/*
 context/users/*
 memory_bank/*
+
+.vscode/*

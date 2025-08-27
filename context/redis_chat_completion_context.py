@@ -4,6 +4,7 @@ from typing import Any, List, Mapping, Optional
 
 from redis import Redis
 from pydantic import BaseModel, Field
+import redis
 from typing_extensions import Self
 
 from autogen_core._component_config import Component
@@ -16,9 +17,14 @@ from autogen_core.models import (
     FunctionExecutionResultMessage,
 )
 
+try:
+    from auth.entra import get_redis_client  # noqa: F401  (kept for backwards compat, but unused here)
+except ImportError:
+    get_redis_client = None  # type: ignore
+
 class RedisChatCompletionContextConfig(BaseModel):
     buffer_size: int = Field(default=6, description="Maximum number of messages to keep in buffer")
-    redis_url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+    redis_url: str = Field(default="redis://localhost:6379", description="Redis connection URL (for reference only; client injected)")
     redis_key_prefix: str = Field(default="chat_history", description="Redis key prefix for storing messages")
     user_id: str = Field(description="Unique identifier for this chat context")
     initial_messages: List[LLMMessage] | None = None
@@ -44,26 +50,20 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
     def __init__(
         self,
         buffer_size: int = 6,
-        redis_url: str = "redis://localhost:6379",
+        redis_client: Optional[redis.Redis] = None,
         redis_key_prefix: str = "chat_history",
         user_id: str = "default",
         initial_messages: List[LLMMessage] | None = None,
     ) -> None:
         if buffer_size <= 0:
             raise ValueError("buffer_size must be greater than 0.")
-        
         self._buffer_size = buffer_size
-        self._redis_url = redis_url
         self._redis_key_prefix = redis_key_prefix
         self._user_id = user_id
-        
-        # Create Redis client
-        self._redis_client = Redis.from_url(redis_url, decode_responses=True)
-        
-        # Redis keys for this context
+        self._redis_client = redis_client
+       
+        # Redis key namespace for this user
         self._messages_key = f"{redis_key_prefix}:{user_id}:messages"
-        
-        # Initialize Redis with initial messages if provided
         if initial_messages:
             self._initialize_redis_with_messages(initial_messages)
 

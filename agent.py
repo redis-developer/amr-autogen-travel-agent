@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Callable, Dict, List, Optional, AsyncGenerator
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.ui import Console
@@ -29,7 +29,7 @@ from autogen_core.tools import FunctionTool
 from autogen_ext.experimental.task_centric_memory.utils import Teachability, PageLogger
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from redisvl.utils.vectorize import HFTextVectorizer
-import redis
+from redis import Redis as RedisClient
 from tavily import TavilyClient
 
 from config import AppConfig
@@ -83,7 +83,8 @@ class TravelAgent:
         vectorizer: Text vectorizer for semantic similarity
     """
 
-    def __init__(self, config: Optional[AppConfig] = None):
+    def __init__(self, config: Optional[AppConfig] = None,
+                  redis_client_factory: Optional[Callable[[], RedisClient]] = None):
         """Initialize the TravelAgent with configuration and shared resources.
         
         Args:
@@ -98,6 +99,9 @@ class TravelAgent:
         os.environ["OPENAI_API_KEY"] = config.openai_api_key
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
 
+        self._redis_factory = redis_client_factory
+        self._redis: Optional[RedisClient] = None
+        
         # Initialize shared clients
         self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
         self.agent_model = OpenAIChatCompletionClient(
@@ -110,6 +114,13 @@ class TravelAgent:
         # Initialize seed users and their memories
         self._user_ctx_cache = {}
         self._init_seed_users()
+
+    def _get_redis(self) -> RedisClient:
+        if self._redis is None:
+            if self._redis_factory is None:
+                raise RuntimeError("Redis client factory not provided")
+            self._redis = self._redis_factory()
+        return self._redis
 
     # ------------------------------
     # User Context Management
@@ -144,7 +155,7 @@ class TravelAgent:
             logger=logger,
             namespace=user_id,  # Isolate user data
             vectorizer=self.vectorizer,
-            redis_url=self.config.redis_url,
+            redis_client=self._get_redis(), 
             config={
                 "generalize_task": True,
                 "generate_topics": True,
@@ -158,7 +169,7 @@ class TravelAgent:
         
         # Initialize chat history management
         model_context = RedisChatCompletionContext(
-            redis_url=self.config.redis_url,
+            redis_client=self._get_redis(), 
             user_id=user_id,
             buffer_size=DEFAULT_BUFFER_SIZE
         )
