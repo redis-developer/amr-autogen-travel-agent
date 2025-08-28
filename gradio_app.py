@@ -1,3 +1,6 @@
+# # Suppress all warnings globally (most aggressive approach)
+import warnings
+warnings.filterwarnings("ignore")
 import asyncio
 import gradio as gr
 import os
@@ -19,7 +22,6 @@ def load_css() -> str:
         return ""
 
 
-
 class TravelAgentUI:
     """
     Gradio UI wrapper for the TravelAgent.
@@ -33,8 +35,13 @@ class TravelAgentUI:
         self.initial_history = []  # Will be populated async
     
     async def initialize_chat_history(self):
-        """Load initial chat history for the default user."""
+        """Initialize seed data and load initial chat history for the default user."""
         try:
+            # First, initialize seed data for all users
+            await self.agent.initialize_seed_data()
+            print("✅ Seed data initialized for all users")
+            
+            # Then load chat history for the current user
             self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
             print(f"✅ Loaded {len(self.initial_history)} initial messages for user: {self.current_user_id}")
         except Exception as e:
@@ -257,17 +264,30 @@ class TravelAgentUI:
                 events_html = "".join([e.get("html", "") for e in events[-200:]])
                 yield history, events, events_html
                 
+                final_response = ""
                 try:
                     # Stream the response with events
                     async for partial_response, evt in self.agent.stream_chat_turn_with_events(self.current_user_id, message):
                         # Keep the thinking dots visible while streaming
                         history[-1] = {"role": "assistant", "content": partial_response}
+                        final_response = partial_response  # Keep track of final response
                         # Append new event if any
                         if evt is not None:
                             events = events + [evt]
                         # Render compact HTML for events
                         events_html = "".join([e.get("html", "") for e in events[-200:]])
                         yield history, events, events_html
+                    
+                    # After streaming completes, store conversation memory asynchronously
+                    if final_response and not final_response.endswith('●●●</span>'):
+                        # Create a background task to store memory without blocking
+                        import asyncio
+                        asyncio.create_task(
+                            self.agent.store_memory(
+                                self.current_user_id, 
+                                message, 
+                            )
+                        )
                     
                 except Exception as e:
                     error_msg = f"Sorry, I encountered an error: {str(e)}"
@@ -378,6 +398,10 @@ async def create_app(config=None) -> gr.Interface:
 
 def main():
     """Main function to launch the Gradio app."""
+    # Set environment variable to suppress warnings before any imports
+    import os
+    os.environ['PYTHONWARNINGS'] = 'ignore'
+    
     print("🌍 AI Travel Concierge - Starting up...")
     
     # Load and validate configuration
