@@ -78,7 +78,7 @@ def test_index(client, namespace: str) -> bool:
             client.ping()
         except Exception as e:
             print(f"{WARN} Pre-index PING failed (will still attempt create): {e}")
-        idx = SearchIndex.from_dict(schema, client=client)
+        idx = SearchIndex.from_dict(schema, redis_client=client)
         t0 = time.perf_counter(); idx.create(overwrite=True, drop=True); dt = (time.perf_counter()-t0)*1000
         print(f"{OK} RediSearch index create in {dt:.1f} ms")
         return True
