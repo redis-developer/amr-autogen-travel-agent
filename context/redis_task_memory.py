@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
-import redis
+from redis import Redis as RedisClient
 
 from auth.entra import get_redis_client  # single public helper
 
@@ -52,7 +52,7 @@ class RedisMemoryBank:
         *,
         namespace: str,
         vectorizer: BaseVectorizer, 
-        redis_client: Optional[redis.Redis] = None,
+        redis_client: Optional[RedisClient] = None,
         distance_threshold: float = 0.7,        # Match base class default
         n_results: int = 25,                    # Match base class default  
         relevance_conversion_threshold: float = 1.7,  # Restored from base class
@@ -311,7 +311,7 @@ class RedisMemoryController(_BaseMemoryController):
         *,
         logger: Optional[PageLogger] = None,
         config: Optional[dict] = None,
-        redis_client: Optional[redis.Redis] = None,
+        redis_client: Optional[RedisClient] = None,
         vectorizer: Optional[object] = None,
         task_assignment_callback=None,
     ) -> None:

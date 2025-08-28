@@ -100,7 +100,6 @@ class TravelAgent:
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
 
         self._redis_factory = redis_client_factory
-        self._redis: Optional[RedisClient] = None
         
         # Initialize shared clients
         self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
@@ -116,11 +115,10 @@ class TravelAgent:
         self._init_seed_users()
 
     def _get_redis(self) -> RedisClient:
-        if self._redis is None:
-            if self._redis_factory is None:
-                raise RuntimeError("Redis client factory not provided")
-            self._redis = self._redis_factory()
-        return self._redis
+        """Return a Redis client via the injected factory (no internal caching)."""
+        if self._redis_factory is None:
+            raise RuntimeError("Redis client factory not provided")
+        return self._redis_factory()
 
     # ------------------------------
     # User Context Management
@@ -824,4 +822,3 @@ class TravelAgent:
         """
         if user_id in self._user_ctx_cache:
             self._user_ctx_cache.pop(user_id, None)
-    

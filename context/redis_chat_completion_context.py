@@ -2,7 +2,7 @@ import json
 import os
 from typing import Any, List, Mapping, Optional
 
-from redis import Redis
+from redis import Redis as RedisClient
 from pydantic import BaseModel, Field
 import redis
 from typing_extensions import Self
@@ -17,10 +17,7 @@ from autogen_core.models import (
     FunctionExecutionResultMessage,
 )
 
-try:
-    from auth.entra import get_redis_client  # noqa: F401  (kept for backwards compat, but unused here)
-except ImportError:
-    get_redis_client = None  # type: ignore
+from auth.entra import get_redis_client 
 
 class RedisChatCompletionContextConfig(BaseModel):
     buffer_size: int = Field(default=6, description="Maximum number of messages to keep in buffer")
@@ -50,7 +47,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
     def __init__(
         self,
         buffer_size: int = 6,
-        redis_client: Optional[redis.Redis] = None,
+        redis_client: Optional[RedisClient] = None,
         redis_key_prefix: str = "chat_history",
         user_id: str = "default",
         initial_messages: List[LLMMessage] | None = None,

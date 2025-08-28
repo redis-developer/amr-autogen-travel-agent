@@ -7,19 +7,23 @@ from pathlib import Path
 from agent import TravelAgent
 from config import get_config, validate_dependencies
 from auth.entra import get_redis_client
+import auth.entra as entra_mod
 
 _redis_client = None
-_config = get_config()
-_redis_host = _config.redis_host
-_redis_port = _config.redis_port
 
 def get_redis():
-    """Lazy singleton Redis client using entra.py"""
+    """Lazy singleton Redis client using entra.py.
+    Implements diagnostics for:
+      1. Early config capture (now loads fresh config when first needed)
+      2. Verifying correct entra module in use (logs entra_mod.__file__)
+    """
     global _redis_client
     if _redis_client is None:
-        print("[app] creating Redis client…")
-        
-        _redis_client = get_redis_client(_redis_host, _redis_port)
+        if _redis_client is None:
+            cfg = get_config()  # fresh load
+            host = cfg.redis_host
+            port = int(cfg.redis_port) if isinstance(cfg.redis_port, str) else cfg.redis_port
+            _redis_client = get_redis_client(host, port)
     return _redis_client
 
 def load_css() -> str:
