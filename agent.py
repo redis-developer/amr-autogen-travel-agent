@@ -207,11 +207,12 @@ class TravelAgent:
     def _load_seed_data(self) -> Dict[str, Any]:
         """Load seed data from JSON file."""
         seed_file = Path(__file__).parent / "context" / "seed.json"
-        try:
-            with open(seed_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        with open(seed_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def get_all_user_ids(self) -> List[str]:
+        """Return a unified list of user IDs from currently cached contexts."""
+        return self._user_ctx_cache.keys()
 
     async def _init_seed_users(self) -> None:
         """Initialize seed users with memories from seed.json."""
@@ -845,14 +846,6 @@ class TravelAgent:
         except Exception as e:
             print(f"Error retrieving chat history for user {user_id}: {e}")
             return []
-
-    def get_user_list(self) -> List[str]:
-        """Get list of all active user IDs.
-        
-        Returns:
-            List[str]: List of user IDs that have been created and cached
-        """
-        return list(self._user_ctx_cache.keys())
 
     def user_exists(self, user_id: str) -> bool:
         """Check if a user context exists in the cache.

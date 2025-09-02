@@ -33,13 +33,19 @@ class TravelAgentUI:
         self.agent = TravelAgent(config=self.config)
         self.current_user_id = "Tyler"  # Default user ID
         self.initial_history = []  # Will be populated async
+        self.user_ids = []  # Dynamic users loaded from seed
     
     async def initialize_chat_history(self):
         """Initialize seed data and load initial chat history for the default user."""
         try:
             # First, initialize seed data for all users
             await self.agent.initialize_seed_data()
-            print("✅ Seed data initialized for all users")
+            users = self.agent.get_all_user_ids()
+            if "Tyler" in users:
+                remaining = sorted([u for u in users if u != "Tyler"])
+                self.user_ids = ["Tyler"] + remaining
+            else:
+                self.user_ids = sorted(users)
             
             # Then load chat history for the current user
             self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
@@ -178,11 +184,12 @@ class TravelAgentUI:
             
             # User Profile Switcher (top)
             with gr.Row(elem_classes=["user-selector-container"], equal_height=True):
+                user_tab_components = {}
+                # Default selected is the first tab; ensure user_ids prepared in initialize_chat_history
                 with gr.Tabs(selected=0) as user_tabs:
-                    with gr.Tab("Tyler") as tyler_tab:
-                        pass
-                    with gr.Tab("Amanda") as amanda_tab:
-                        pass
+                    for uid in (self.user_ids or ["Tyler"]):
+                        with gr.Tab(uid) as _tab:
+                            user_tab_components[uid] = _tab
             
             # Two-column layout: Chat (left 70%) and Agent Logs (right 30%)
             with gr.Row(equal_height=False, variant="panel"):
@@ -315,50 +322,32 @@ class TravelAgentUI:
                 queue=True
             )
             
-            # User switcher handlers via Tabs
-            async def handle_tab_tyler():
-                try:
-                    history = await self.switch_user("Tyler")
-                    # Reset events panel to initial state
-                    initial_events_html = """
-                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
-                        <div style="text-align: center; margin-top: 200px;">
-                            <p>🤖 Agent events will appear here during chat</p>
+            # User switcher handlers via Tabs (dynamic)
+            def make_handle_tab(user_id: str):
+                async def _handler():
+                    try:
+                        history = await self.switch_user(user_id)
+                        # Reset events panel to initial state
+                        initial_events_html = """
+                        <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                            <div style="text-align: center; margin-top: 200px;">
+                                <p>🤖 Agent events will appear here during chat</p>
+                            </div>
                         </div>
-                    </div>
-                    """
-                    return history, [], initial_events_html, ""
-                except Exception as e:
-                    print(f"Error switching to user Tyler: {e}")
-                    return [], [], "", ""
+                        """
+                        return history, [], initial_events_html, ""
+                    except Exception as e:
+                        print(f"Error switching to user {user_id}: {e}")
+                        return [], [], "", ""
+                return _handler
 
-            async def handle_tab_amanda():
-                try:
-                    history = await self.switch_user("Amanda")
-                    # Reset events panel to initial state
-                    initial_events_html = """
-                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
-                        <div style="text-align: center; margin-top: 200px;">
-                            <p>🤖 Agent events will appear here during chat</p>
-                        </div>
-                    </div>
-                    """
-                    return history, [], initial_events_html, ""
-                except Exception as e:
-                    print(f"Error switching to user Amanda: {e}")
-                    return [], [], "", ""
-
-            tyler_tab.select(
-                handle_tab_tyler,
-                outputs=[chatbot, events_state, events_panel, msg],
-                queue=True
-            )
-
-            amanda_tab.select(
-                handle_tab_amanda,
-                outputs=[chatbot, events_state, events_panel, msg],
-                queue=True
-            )
+            # Attach selection handlers for each user tab
+            for uid, tab in (user_tab_components or {}).items():
+                tab.select(
+                    make_handle_tab(uid),
+                    outputs=[chatbot, events_state, events_panel, msg],
+                    queue=True
+                )
             
             # Clear chat functionality
             async def handle_clear_chat():

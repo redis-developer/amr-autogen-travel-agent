@@ -3,24 +3,12 @@
     "Tyler": [],
     "Purna": [
       {
-        "insight": "Purna loves the outdoors and is adventure-seeking."
-      },
-      {
-        "insight": "Purna is also a software product manager and works for Redis."
-      },
-      {
-        "insight": "Purna flies exclusively Delta airlines because she has a SkyMiles membership."
-      },
+        "insight": "Purna is an adventure-seeking, outdoor-loving software product manager who works for Redis and flies exclusively Delta airlines due to her SkyMiles membership."
+      }
     ],
     "Jan": [
       {
-        "insight": "Jan is a luxury traveler who values premium experiences, five-star accommodations, and fine dining."
-      },
-      {
-        "insight": "Jan prefers comfort and high-end services, often choosing spa resorts and boutique hotels for his trips."
-      },
-      {
-        "insight": "Jan is a product manager a Azure."
+        "insight": "Jan is a luxury traveler and product manager at Azure who values premium experiences, five-star accommodations, fine dining, comfort, and high-end services, often choosing spa resorts and boutique hotels for his trips."
       }
     ]
   }
