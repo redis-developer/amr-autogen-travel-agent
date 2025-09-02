@@ -72,9 +72,6 @@ class TravelAgentUI:
         return await self.agent.get_chat_history(new_user_id, n=-1)
     
 
-    
-
-    
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user from Redis and UI."""
         if not self.current_user_id:
@@ -399,17 +396,12 @@ async def create_app(config=None) -> gr.Interface:
 def main():
     """Main function to launch the Gradio app."""
     # Set environment variable to suppress warnings before any imports
-    import os
-    os.environ['PYTHONWARNINGS'] = 'ignore'
-    
+    os.environ['PYTHONWARNINGS'] = 'ignore'    
     print("🌍 AI Travel Concierge - Starting up...")
     
     # Load and validate configuration
-    try:
-        config = get_config()
-        print("✅ Configuration loaded successfully")
-    except SystemExit:
-        return
+    config = get_config()
+    print("✅ Configuration loaded successfully")
     
     # Validate dependencies
     if not validate_dependencies():

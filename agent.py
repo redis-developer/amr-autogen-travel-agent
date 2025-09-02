@@ -3,6 +3,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import os
 import json
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -88,24 +89,11 @@ class TravelAgent:
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
 
         # Initialize shared clients
-        print(f"🔧 Initializing Tavily client with API key: {config.tavily_api_key[:10]}...", flush=True)
-        try:
-            self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
-            print("✅ Tavily client initialized successfully", flush=True)
-        except Exception as e:
-            print(f"❌ Failed to initialize Tavily client: {e}", flush=True)
-            self.tavily_client = None
-            
-        print(f"🔧 Initializing OpenAI client with model: {config.travel_agent_model_name}", flush=True)
-        try:
-            self.agent_model = OpenAIChatCompletionClient(
-                model=config.travel_agent_model_name, 
-                parallel_tool_calls=False
-            )
-            print("✅ OpenAI client initialized successfully", flush=True)
-        except Exception as e:
-            print(f"❌ Failed to initialize OpenAI client: {e}", flush=True)
-            raise
+        self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
+        self.agent_model = OpenAIChatCompletionClient(
+            model=config.travel_agent_model, 
+            parallel_tool_calls=False
+        )
 
         # Initialize user context cache
         self._user_ctx_cache = {}
@@ -126,61 +114,57 @@ class TravelAgent:
             
         Returns:
             Mem0Memory instance configured for the user
-            
-        Raises:
-            RuntimeError: If Mem0 configuration fails
         """
-        try:
-            return Mem0Memory(
-                user_id=user_id,
-                is_cloud=False,
-                config={
-                    "vector_store": {
-                        "provider": "redis",
-                        "config": {
-                            "collection_name": f"memory:{user_id}",  # Per-user namespace
-                            "embedding_model_dims": 1536,  # Default for OpenAI embeddings
-                            "redis_url": self.config.redis_url,
-                        }
-                    },
-                    "llm": {
-                        "provider": "openai",
-                        "config": {
-                            "model": "gpt-4.1-mini",     # <-- pick your OpenAI model
-                            "temperature": 0.1,
-                            "api_key": self.config.openai_api_key,
-                        }
-                    },
-                    "embedder": {
-                        "provider": "openai",
-                        "config": {
-                            "model": self.config.mem0_embedding_model,
-                            "api_key": self.config.openai_api_key,
-                        }
-                    },
-                    "custom_fact_extraction_prompt": """
-                    You extract durable traveler details and preferences for a travel concierge.
-
-                    Return JSON only (no prose, no code fences), exactly in this form:
-                    {"facts": ["<fact-1>", "<fact-2>", "..."]}
-                    If no durable facts are present, return: {"facts": []}
-
-                    Extract only durable, user-specific items helpful across trips:
-                    - Airline & seat/class; hotel brands/style; loyalty programs/IDs
-                    - Dietary restrictions/allergies; cuisine likes/dislikes
-                    - Budget range; preferred airports or arrival windows; accessibility needs
-                    - User interests and biographical details that impact planning
-
-                    Constraints:
-                    - At most 3–4 concise facts per turn.
-                    - One fact per array element, short and declarative.
-                    - Exclude greetings, moods, generic chit-chat, and one-off/temporary details unless explicitly time-bound.
-                    """,
-                    "version": "v1.1"
+        print(f"🧠 Creating memory bank for user: {user_id}")
+        return Mem0Memory(
+            user_id=user_id,
+            is_cloud=False,
+            config={
+                "llm": {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.config.mem0_model,
+                        "temperature": 0.1,
+                        "api_key": self.config.openai_api_key,
+                    }
                 },
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to create Mem0 memory for user {user_id}: {e}")
+                "embedder": {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.config.mem0_embedding_model,
+                        "api_key": self.config.openai_api_key,
+                    }
+                },
+                "vector_store": {
+                    "provider": "redis",
+                    "config": {
+                        "collection_name": f"memory:{user_id}",  # Per-user namespace
+                        "embedding_model_dims": self.config.mem0_embedding_model_dims,
+                        "redis_url": self.config.redis_url,
+                    }
+                },
+                "custom_fact_extraction_prompt": """
+                You extract durable traveler details and preferences for a travel concierge.
+
+                Return JSON only (no prose, no code fences), exactly in this form:
+                {"facts": ["<fact-1>", "<fact-2>", "..."]}
+                If no durable facts are present, return: {"facts": []}
+
+                Extract only durable, user-specific items helpful across trips:
+                - Airline & seat/class; hotel brands/style; loyalty programs/IDs
+                - Dietary restrictions/allergies; cuisine likes/dislikes
+                - Budget range; preferred airports or arrival windows; accessibility needs
+                - User interests and biographical details that impact planning
+
+                Constraints:
+                - At most 3 concise facts per turn.
+                - One fact per array element, short and declarative.
+                - Exclude greetings, moods, generic chit-chat, and one-off/temporary details.
+                """,
+                "version": "v1.1"
+            },
+        )
+
     
     def _get_or_create_user_ctx(self, user_id: str) -> UserCtx:
         """Get or create user-specific context with Mem0 memory and agent components.
@@ -196,8 +180,6 @@ class TravelAgent:
         """
         if user_ctx := self._user_ctx_cache.get(user_id):
             return user_ctx
-
-        print(f"🧠 Creating memory bank for user: {user_id}")
         
         # Create Mem0 memory instance
         mem0_memory = self._create_memory(user_id)
@@ -240,16 +222,13 @@ class TravelAgent:
             try:
                 ctx = self._get_or_create_user_ctx(str(user_id))
                 print(f"🌱 Seeding memory for user: {user_id}")
-                
                 for memo in memories:
                     # Add memory content to Mem0
                     await ctx.memory.add(MemoryContent(
                         content=memo["insight"],
                         mime_type=MemoryMimeType.TEXT
                     ))
-                
                 print(f"✅ Seeded {len(memories)} memories to Redis for user: {user_id}")
-                
             except Exception as e:
                 print(f"❌ Failed to seed memory for user {user_id}: {e}")
                 continue
@@ -269,20 +248,13 @@ class TravelAgent:
             AssistantAgent: Configured supervisor with memory and tools
         """
         print("🤖 Creating AssistantAgent with tools...", flush=True)
-        
-        tools = self._get_tools()
-        print(f"   📋 Registered {len(tools)} tools:", flush=True)
-        for i, tool in enumerate(tools, 1):
-            tool_name = getattr(tool, 'name', 'unknown')
-            print(f"      {i}. {tool_name}", flush=True)
-        
         try:
             agent = AssistantAgent(
                 name="agent",
                 model_client=self.agent_model,
                 model_context=model_context,  # Chat history management
                 memory=[memory],         # Long term memory management
-                tools=tools,
+                tools=self._get_tools(),
                 system_message=self._get_system_message(),
                 max_tool_iterations=self.config.max_tool_iterations,
                 model_client_stream=True,     # Enable token streaming
@@ -291,7 +263,6 @@ class TravelAgent:
             return agent
         except Exception as e:
             print(f"❌ Failed to create AssistantAgent: {e}", flush=True)
-            import traceback
             print(f"   Full traceback: {traceback.format_exc()}", flush=True)
             raise
     
@@ -301,44 +272,29 @@ class TravelAgent:
         Returns:
             List[FunctionTool]: List of tools available to the agent
         """
-        print("🔧 Creating FunctionTool instances...", flush=True)
-        
         tools = []
-        
-        try:
-            logistics_tool = FunctionTool(
-                func=self.search_logistics,
-                description=(
-                    "Time-aware logistics search ONLY: flights, hotels, and intercity/local transport. "
-                    "Use for availability, schedules, prices, carriers/properties, or routes. "
-                    "Arguments: query (required), start_date (optional, YYYY-MM-DD), end_date (optional, YYYY-MM-DD). "
-                    "Always include dates when the user mentions a travel window; if ambiguous, ask for dates before booking guidance. "
-                    "NEVER use this for activities, attractions, neighborhoods, or dining. "
-                    "Results are restricted to reputable flight/hotel/transport sources; top URLs are deeply extracted."
-                )
+        tools.append(FunctionTool(
+            func=self.search_logistics,
+            description=(
+                "Time-aware logistics search ONLY: flights, hotels, and intercity/local transport. "
+                "Use for availability, schedules, prices, carriers/properties, or routes. "
+                "Arguments: query (required), start_date (optional, YYYY-MM-DD), end_date (optional, YYYY-MM-DD). "
+                "Always include dates when the user mentions a travel window; if ambiguous, ask for dates before booking guidance. "
+                "NEVER use this for activities, attractions, neighborhoods, or dining. "
+                "Results are restricted to reputable flight/hotel/transport sources; top URLs are deeply extracted."
             )
-            tools.append(logistics_tool)
-            print("   ✅ search_logistics tool created", flush=True)
-        except Exception as e:
-            print(f"   ❌ Failed to create search_logistics tool: {e}", flush=True)
-            
-        try:
-            general_tool = FunctionTool(
-                func=self.search_general,
-                description=(
-                    "Time-aware destination research: activities, attractions, neighborhoods, dining, events, local tips. "
-                    "Use for up-to-date things to do, cultural context, and planning inspiration. "
-                    "Arguments: query (required) "
-                    "Scope searches to the relevant season/year when possible and prefer recent sources. "
-                    "NEVER use this for flights, hotels, or transport logistics. "
-                    "Example: 'things to do in Lisbon in June 2026'."
-                )
+        ))        
+        tools.append(FunctionTool(
+            func=self.search_general,
+            description=(
+                "Time-aware destination research: activities, attractions, neighborhoods, dining, events, local tips. "
+                "Use for up-to-date things to do, cultural context, and planning inspiration. "
+                "Arguments: query (required) "
+                "Scope searches to the relevant season/year when possible and prefer recent sources. "
+                "NEVER use this for flights, hotels, or transport logistics. "
+                "Example: 'things to do in Lisbon in June 2026'."
             )
-            tools.append(general_tool)
-            print("   ✅ search_general tool created", flush=True)
-        except Exception as e:
-            print(f"   ❌ Failed to create search_general tool: {e}", flush=True)
-        
+        ))
         print(f"🏁 Tool creation complete. {len(tools)} tools ready.", flush=True)
         return tools
     
@@ -353,15 +309,14 @@ class TravelAgent:
             f"You are an expert, time-aware, friendly Travel Concierge AI. Today is {today} (UTC). "
             "Assume your built in knowledge may be outdated; for anything time-sensitive, verify with tools.\n\n"
             "ROLE:\n"
-            "- Discover destinations, plan itineraries, recommend accommodations, and organize logistics.\n"
-            "- Research current options, prices, availability, and on-the-ground activities.\n"
+            "- Discover destinations, plan itineraries, recommend accommodations, and organize logistics on behalf of the user.\n"
+            "- Research current options, prices, availability, and on-the-ground activities using your tools.\n"
             "- Produce clear, actionable itineraries and booking guidance.\n"
             "- Regardless of your prior knowledge, always use search tools for current or future-state information.\n\n"
-            "TOOLING POLICY (TIME AWARENESS):\n"
+            "TOOL USAGE: You have access to the following helpful tools.\n"
             "- Use search_logistics ONLY for flights, hotels, or transport. Include start_date/end_date (YYYY-MM-DD) when known.\n"
             "- Use search_general for activities, attractions, neighborhoods, dining, events, or local tips. Include dates when relevant.\n"
             "- Prefer recent sources (past 12–24 months) and pass explicit dates to tools whenever the user provides a time window.\n"
-            "- If dates are ambiguous (e.g., 'this spring'), ask for clarification before booking-critical steps.\n\n"
             "DISCOVERY:\n"
             "- If missing details, ask targeted questions (exact dates or window, origin/destination, budget, party size, interests,\n"
             "  lodging preferences, accessibility, loyalty programs).\n\n"
@@ -372,8 +327,8 @@ class TravelAgent:
             "- Normalize to a single currency if prices appear; state assumptions.\n"
             "- For itineraries, list day-by-day with times and logistics.\n\n"
             "MEMORY:\n"
-            "- Consider any appended Important insights (long-term memory) before answering and adapt to them.\n"
-            "- Memory system: Mem0 with semantic search and automatic memory extraction"
+            "- Consider any appended important insights (long-term memory) from the user before answering and adapt to them.\n"
+            "- Consider any relevant memories as helpful context but treat current session state as priority since it's current."
         )
 
     # -----------------
@@ -400,15 +355,9 @@ class TravelAgent:
         - Restricts sources to reputable flight/hotel/transport providers and aggregators.
         - Returns the strongest matches first and deeply extracts the top URLs for rich context.
         """
-        print(f"🔧 LOGISTICS: {query} | {start_date} to {end_date}", flush=True)
+        print(f"🔧 LOGISTICS SEARCH: {query} | {start_date} to {end_date}", flush=True)
         
         try:
-            # Validate Tavily client
-            if not self.tavily_client:
-                error_msg = "❌ Tavily client not initialized"
-                print(error_msg, flush=True)
-                return {"error": error_msg, "results": [], "extractions": []}
-            
             # Augment query with dates if provided
             enhanced_query = query
             if start_date:
@@ -485,16 +434,8 @@ class TravelAgent:
         Behavior
         - Runs an open web search (no logistics domains restriction) with raw content for context.
         """
-        print(f"\n🔧 SEARCH_GENERAL CALLED", flush=True)
-        print(f"   Query: {query}", flush=True)
-        
+        print(f"🔧 GENERAL SEARCH: {query}", flush=True)        
         try:
-            # Validate Tavily client
-            if not self.tavily_client:
-                error_msg = "❌ Tavily client not initialized"
-                print(error_msg, flush=True)
-                return {"error": error_msg, "results": []}
-            
             search_kwargs = {
                 "query": query,
                 "topic": "general",
@@ -526,7 +467,6 @@ class TravelAgent:
         except Exception as e:
             error_msg = f"❌ GENERAL SEARCH ERROR: {str(e)}"
             print(error_msg, flush=True)
-            import traceback
             print(f"   Full traceback: {traceback.format_exc()}", flush=True)
             return {"error": error_msg, "results": []}
 
