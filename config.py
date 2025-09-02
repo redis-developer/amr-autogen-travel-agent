@@ -1,6 +1,9 @@
 """
 Configuration management for the Travel Agent application.
 """
+# import suppress_warnings  # Must be first to suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
 import os
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
@@ -13,12 +16,14 @@ class AppConfig(BaseSettings):
     # API Keys
     openai_api_key: str = Field(..., env="OPENAI_API_KEY", description="OpenAI API key")
     tavily_api_key: str = Field(..., env="TAVILY_API_KEY", description="Tavily API key")
-    
+
     # Model Configuration
-    travel_agent_model_name: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL_NAME", description="OpenAI model name for the travel agent")
-    memory_model_name: str = Field(default="gpt-4.1-mini", env="MEMORY_MODEL_NAME", description="OpenAI model name for memory operations")
+    travel_agent_model: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL", description="OpenAI model name for the travel agent")
+    mem0_model: str = Field(default="gpt-4.1-mini", env="MEM0_MODEL", description="OpenAI LLM name for the travel agent memory system")
+    mem0_embedding_model: str = Field(default="text-embedding-3-small", env="MEM0_EMBEDDING_MODEL", description="OpenAI embedding model for Mem0 memory system")
+    mem0_embedding_model_dims: int = Field(default=1536, env="MEM0_EMBDDING_MODEL_DIMS", description="Embedding dimensions for OpenAI embedding model")
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
-    
+
     # Redis Configuration
     redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL", description="Redis connection URL")
     
@@ -32,6 +37,7 @@ class AppConfig(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra environment variables
     
     @field_validator("openai_api_key")
     @classmethod

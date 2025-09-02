@@ -1,17 +1,14 @@
 {
   "user_memories": {
-    "Tyler": [
+    "Tyler": [],
+    "Purna": [
       {
-        "insight": "Tyler is an adventure-seeking outdoorsman who prioritizes budget-friendly travel and outdoor experiences. He's passionate about extreme sports, national parks, and outdoor adventures wherever he goes.",
-        "topics": ["Outdoors", "Interests", "Preferences"],
-        "task": "Plan budget-friendly adventure travel"
+        "insight": "Purna is an adventure-seeking, outdoor-loving software product manager who works for Redis and flies exclusively Delta airlines due to her SkyMiles membership."
       }
     ],
-    "Amanda": [
+    "Jan": [
       {
-        "insight": "Amanda is a luxury traveler who values premium experiences, five-star accommodations, and fine dining. She prefers comfort and high-end services, often choosing spa resorts and boutique hotels for her trips.",
-        "topics": ["Luxury", "Interests", "Preferences"],
-        "task": "Plan luxury travel experience"
+        "insight": "Jan is a luxury traveler and product manager at Azure who values premium experiences, five-star accommodations, fine dining, comfort, and high-end services, often choosing spa resorts and boutique hotels for his trips."
       }
     ]
   }

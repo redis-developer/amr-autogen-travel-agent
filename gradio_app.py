@@ -1,3 +1,6 @@
+# # Suppress all warnings globally (most aggressive approach)
+import warnings
+warnings.filterwarnings("ignore")
 import asyncio
 import gradio as gr
 import os
@@ -19,7 +22,6 @@ def load_css() -> str:
         return ""
 
 
-
 class TravelAgentUI:
     """
     Gradio UI wrapper for the TravelAgent.
@@ -31,10 +33,21 @@ class TravelAgentUI:
         self.agent = TravelAgent(config=self.config)
         self.current_user_id = "Tyler"  # Default user ID
         self.initial_history = []  # Will be populated async
+        self.user_ids = []  # Dynamic users loaded from seed
     
     async def initialize_chat_history(self):
-        """Load initial chat history for the default user."""
+        """Initialize seed data and load initial chat history for the default user."""
         try:
+            # First, initialize seed data for all users
+            await self.agent.initialize_seed_data()
+            users = self.agent.get_all_user_ids()
+            if "Tyler" in users:
+                remaining = sorted([u for u in users if u != "Tyler"])
+                self.user_ids = ["Tyler"] + remaining
+            else:
+                self.user_ids = sorted(users)
+            
+            # Then load chat history for the current user
             self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
             print(f"✅ Loaded {len(self.initial_history)} initial messages for user: {self.current_user_id}")
         except Exception as e:
@@ -65,9 +78,6 @@ class TravelAgentUI:
         return await self.agent.get_chat_history(new_user_id, n=-1)
     
 
-    
-
-    
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user from Redis and UI."""
         if not self.current_user_id:
@@ -174,11 +184,12 @@ class TravelAgentUI:
             
             # User Profile Switcher (top)
             with gr.Row(elem_classes=["user-selector-container"], equal_height=True):
+                user_tab_components = {}
+                # Default selected is the first tab; ensure user_ids prepared in initialize_chat_history
                 with gr.Tabs(selected=0) as user_tabs:
-                    with gr.Tab("Tyler") as tyler_tab:
-                        pass
-                    with gr.Tab("Amanda") as amanda_tab:
-                        pass
+                    for uid in (self.user_ids or ["Tyler"]):
+                        with gr.Tab(uid) as _tab:
+                            user_tab_components[uid] = _tab
             
             # Two-column layout: Chat (left 70%) and Agent Logs (right 30%)
             with gr.Row(equal_height=False, variant="panel"):
@@ -257,17 +268,30 @@ class TravelAgentUI:
                 events_html = "".join([e.get("html", "") for e in events[-200:]])
                 yield history, events, events_html
                 
+                final_response = ""
                 try:
                     # Stream the response with events
                     async for partial_response, evt in self.agent.stream_chat_turn_with_events(self.current_user_id, message):
                         # Keep the thinking dots visible while streaming
                         history[-1] = {"role": "assistant", "content": partial_response}
+                        final_response = partial_response  # Keep track of final response
                         # Append new event if any
                         if evt is not None:
                             events = events + [evt]
                         # Render compact HTML for events
                         events_html = "".join([e.get("html", "") for e in events[-200:]])
                         yield history, events, events_html
+                    
+                    # After streaming completes, store conversation memory asynchronously
+                    if final_response and not final_response.endswith('●●●</span>'):
+                        # Create a background task to store memory without blocking
+                        import asyncio
+                        asyncio.create_task(
+                            self.agent.store_memory(
+                                self.current_user_id, 
+                                message, 
+                            )
+                        )
                     
                 except Exception as e:
                     error_msg = f"Sorry, I encountered an error: {str(e)}"
@@ -298,50 +322,32 @@ class TravelAgentUI:
                 queue=True
             )
             
-            # User switcher handlers via Tabs
-            async def handle_tab_tyler():
-                try:
-                    history = await self.switch_user("Tyler")
-                    # Reset events panel to initial state
-                    initial_events_html = """
-                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
-                        <div style="text-align: center; margin-top: 200px;">
-                            <p>🤖 Agent events will appear here during chat</p>
+            # User switcher handlers via Tabs (dynamic)
+            def make_handle_tab(user_id: str):
+                async def _handler():
+                    try:
+                        history = await self.switch_user(user_id)
+                        # Reset events panel to initial state
+                        initial_events_html = """
+                        <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
+                            <div style="text-align: center; margin-top: 200px;">
+                                <p>🤖 Agent events will appear here during chat</p>
+                            </div>
                         </div>
-                    </div>
-                    """
-                    return history, [], initial_events_html, ""
-                except Exception as e:
-                    print(f"Error switching to user Tyler: {e}")
-                    return [], [], "", ""
+                        """
+                        return history, [], initial_events_html, ""
+                    except Exception as e:
+                        print(f"Error switching to user {user_id}: {e}")
+                        return [], [], "", ""
+                return _handler
 
-            async def handle_tab_amanda():
-                try:
-                    history = await self.switch_user("Amanda")
-                    # Reset events panel to initial state
-                    initial_events_html = """
-                    <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
-                        <div style="text-align: center; margin-top: 200px;">
-                            <p>🤖 Agent events will appear here during chat</p>
-                        </div>
-                    </div>
-                    """
-                    return history, [], initial_events_html, ""
-                except Exception as e:
-                    print(f"Error switching to user Amanda: {e}")
-                    return [], [], "", ""
-
-            tyler_tab.select(
-                handle_tab_tyler,
-                outputs=[chatbot, events_state, events_panel, msg],
-                queue=True
-            )
-
-            amanda_tab.select(
-                handle_tab_amanda,
-                outputs=[chatbot, events_state, events_panel, msg],
-                queue=True
-            )
+            # Attach selection handlers for each user tab
+            for uid, tab in (user_tab_components or {}).items():
+                tab.select(
+                    make_handle_tab(uid),
+                    outputs=[chatbot, events_state, events_panel, msg],
+                    queue=True
+                )
             
             # Clear chat functionality
             async def handle_clear_chat():
@@ -378,14 +384,13 @@ async def create_app(config=None) -> gr.Interface:
 
 def main():
     """Main function to launch the Gradio app."""
+    # Set environment variable to suppress warnings before any imports
+    os.environ['PYTHONWARNINGS'] = 'ignore'    
     print("🌍 AI Travel Concierge - Starting up...")
     
     # Load and validate configuration
-    try:
-        config = get_config()
-        print("✅ Configuration loaded successfully")
-    except SystemExit:
-        return
+    config = get_config()
+    print("✅ Configuration loaded successfully")
     
     # Validate dependencies
     if not validate_dependencies():

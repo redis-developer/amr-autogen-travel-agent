@@ -1,14 +1,15 @@
+# import suppress_warnings  # Must be first to suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
 import os
 import json
-import pickle
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.ui import Console
 from autogen_agentchat.messages import (
     TextMessage,
     ToolCallRequestEvent,
@@ -26,61 +27,50 @@ from autogen_agentchat.messages import (
     StopMessage,
 )
 from autogen_core.tools import FunctionTool
-from autogen_ext.experimental.task_centric_memory.utils import Teachability, PageLogger
+from autogen_core.memory import MemoryContent, MemoryMimeType
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from redisvl.utils.vectorize import HFTextVectorizer
-import redis
+from autogen_ext.memory.mem0 import Mem0Memory
 from tavily import TavilyClient
 
 from config import AppConfig
 from context.redis_chat_completion_context import RedisChatCompletionContext
-from context.redis_task_memory import RedisMemoryController
 
 
 # Constants
 DEFAULT_BUFFER_SIZE = 10
-DEFAULT_MAX_MEMOS = 4
 DEFAULT_MAX_SEARCH_RESULTS = 8
-LOG_LEVEL = "INFO"
 
 
 @dataclass
 class UserCtx:
-    """User-specific context containing memory components and agent instances.
+    """User-specific context containing Mem0 memory and agent instances.
     
     Attributes:
-        controller: Redis-backed memory controller for task-centric memory
-        teachability: Memory adapter for long-term learning capabilities  
+        memory: Mem0 memory instance for user-specific memory management
         agent: Main assistant agent with tools and memory integration
-        logger: Page logger for debugging and monitoring
     """
-    controller: RedisMemoryController
-    teachability: Teachability
+    memory: Mem0Memory
     agent: AssistantAgent
-    logger: PageLogger
 
 
 class TravelAgent:
-    """Travel planning agent with per-user task-centric memory capabilities.
+    """Travel planning agent with Mem0-powered personalized memory capabilities.
     
     This agent provides personalized travel planning services by maintaining
-    separate memory contexts for each user. Each user gets their own memory
-    controller, teachability adapter, and supervisor agent instance that are
-    cached for performance.
+    separate Mem0 memory contexts for each user. Each user gets their own
+    Mem0 memory instance and supervisor agent that are cached for performance.
     
     Features:
-        - Per-user memory isolation using Redis namespaces
-        - Long-term learning via task-centric memory
+        - Per-user memory isolation using Mem0 with Redis backend
+        - Semantic memory search and retrieval via Mem0
         - Web search integration for current travel information
         - Chat history management with configurable buffer sizes
-        - Insight extraction and application for personalized recommendations
+        - Automatic memory extraction and personalized recommendations
     
     Attributes:
         config: Application configuration containing API keys and model settings
         tavily_client: Web search client for travel information
         agent_model: OpenAI client for the main travel agent
-        memory_model: OpenAI client for memory operations
-        vectorizer: Text vectorizer for semantic similarity
     """
 
     def __init__(self, config: Optional[AppConfig] = None):
@@ -101,60 +91,98 @@ class TravelAgent:
         # Initialize shared clients
         self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
         self.agent_model = OpenAIChatCompletionClient(
-            model=config.travel_agent_model_name, 
+            model=config.travel_agent_model, 
             parallel_tool_calls=False
         )
-        self.memory_model = OpenAIChatCompletionClient(model=config.memory_model_name)
-        self.vectorizer = HFTextVectorizer()
 
-        # Initialize seed users and their memories
+        # Initialize user context cache
         self._user_ctx_cache = {}
-        self._init_seed_users()
+    
+    async def initialize_seed_data(self) -> None:
+        """Initialize seed users with their memories. Call this after creating the agent."""
+        await self._init_seed_users()
 
     # ------------------------------
     # User Context Management
     # ------------------------------
     
-    def _get_or_create_user_ctx(self, user_id: str) -> UserCtx:
-        """Get or create user-specific context with memory and agent components.
-        
-        Creates and caches a complete user context including memory controller,
-        teachability adapter, chat history management, and supervisor agent.
-        Also handles preseeding user memories if they don't exist yet.
+    def _create_memory(self, user_id: str) -> Mem0Memory:
+        """Create Mem0 memory instance for a user.
         
         Args:
             user_id: Unique identifier for the user
             
         Returns:
-            UserCtx: Complete user context with all components initialized
+            Mem0Memory instance configured for the user
+        """
+        print(f"🧠 Creating memory bank for user: {user_id}")
+        return Mem0Memory(
+            user_id=user_id,
+            is_cloud=False,
+            config={
+                "llm": {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.config.mem0_model,
+                        "temperature": 0.1,
+                        "api_key": self.config.openai_api_key,
+                    }
+                },
+                "embedder": {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.config.mem0_embedding_model,
+                        "api_key": self.config.openai_api_key,
+                    }
+                },
+                "vector_store": {
+                    "provider": "redis",
+                    "config": {
+                        "collection_name": f"memory:{user_id}",  # Per-user namespace
+                        "embedding_model_dims": self.config.mem0_embedding_model_dims,
+                        "redis_url": self.config.redis_url,
+                    }
+                },
+                "custom_fact_extraction_prompt": """
+                You extract durable traveler details and preferences for a travel concierge.
+
+                Return JSON only (no prose, no code fences), exactly in this form:
+                {"facts": ["<fact-1>", "<fact-2>", "..."]}
+                If no durable facts are present, return: {"facts": []}
+
+                Extract only durable, user-specific items helpful across trips:
+                - Airline & seat/class; hotel brands/style; loyalty programs/IDs
+                - Dietary restrictions/allergies; cuisine likes/dislikes
+                - Budget range; preferred airports or arrival windows; accessibility needs
+                - User interests and biographical details that impact planning
+
+                Constraints:
+                - At most 3 concise facts per turn.
+                - One fact per array element, short and declarative.
+                - Exclude greetings, moods, generic chit-chat, and one-off/temporary details.
+                """,
+                "version": "v1.1"
+            },
+        )
+
+    
+    def _get_or_create_user_ctx(self, user_id: str) -> UserCtx:
+        """Get or create user-specific context with Mem0 memory and agent components.
+        
+        Creates and caches a complete user context including Mem0 memory,
+        chat history management, and supervisor agent.
+        
+        Args:
+            user_id: Unique identifier for the user
+            
+        Returns:
+            UserCtx: Complete user context with Mem0 memory initialized
         """
         if user_ctx := self._user_ctx_cache.get(user_id):
             return user_ctx
-
-        # Initialize user-specific logger
-        logger = PageLogger(config={
-            "level": LOG_LEVEL, 
-            "path": f"./context/logs/{user_id}"
-        })
         
-        # Create Redis-backed memory controller with user namespace
-        controller = RedisMemoryController(
-            reset=False,  # Preserve insights across sessions
-            client=self.memory_model,
-            logger=logger,
-            namespace=user_id,  # Isolate user data
-            vectorizer=self.vectorizer,
-            redis_url=self.config.redis_url,
-            config={
-                "generalize_task": True,
-                "generate_topics": True,
-                "validate_memos": True,
-                "max_memos_to_retrieve": DEFAULT_MAX_MEMOS,
-            },
-        )
-        
-        # Create teachability adapter for long-term learning
-        teachability = Teachability(controller, name=f"{user_id}_memory")
+        # Create Mem0 memory instance
+        mem0_memory = self._create_memory(user_id)
         
         # Initialize chat history management
         model_context = RedisChatCompletionContext(
@@ -163,97 +191,113 @@ class TravelAgent:
             buffer_size=DEFAULT_BUFFER_SIZE
         )
         
-        # Create supervisor agent with memory integration
+        # Create supervisor agent with Mem0 memory
         agent = self._create_agent(
             model_context=model_context,
-            memory_adapter=teachability
+            memory=mem0_memory
         )
         
-        # Cache and return complete user context
-        user_ctx = UserCtx(
-            controller=controller,
-            teachability=teachability,
-            agent=agent,
-            logger=logger
+        # Cache and return user context
+        self._user_ctx_cache[user_id] = UserCtx(
+            memory=mem0_memory,
+            agent=agent
         )
-        self._user_ctx_cache[user_id] = user_ctx
-
-        return user_ctx
+        return self._user_ctx_cache[user_id]
 
     def _load_seed_data(self) -> Dict[str, Any]:
         """Load seed data from JSON file."""
         seed_file = Path(__file__).parent / "context" / "seed.json"
-        try:
-            with open(seed_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        with open(seed_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
 
-    def _init_seed_users(self) -> None:
-        """Simple seed init: load seed.json, create contexts, add memos."""
+    def get_all_user_ids(self) -> List[str]:
+        """Return a unified list of user IDs from currently cached contexts."""
+        return self._user_ctx_cache.keys()
+
+    async def _init_seed_users(self) -> None:
+        """Initialize seed users with memories from seed.json."""
         seed_data = self._load_seed_data()
         user_memories = seed_data.get("user_memories", {})
         
         for user_id, memories in user_memories.items():
-            ctx = self._get_or_create_user_ctx(str(user_id))
-            if ctx.controller.memory_bank.contains_memos():
-                print(f"⏭️  Skipping seed for user {user_id} - memory bank already contains memos")
-            else:
+            try:
+                ctx = self._get_or_create_user_ctx(str(user_id))
+                print(f"🌱 Seeding memory for user: {user_id}")
                 for memo in memories:
-                    ctx.controller.memory_bank.add_memo(
-                        insight_str=memo["insight"],
-                        topics=memo["topics"],
-                        task_str=memo.get("task")
-                    )
-                print(f"✅ Seeded {len(memories)} memories for user: {user_id}")
+                    # Add memory content to Mem0
+                    await ctx.memory.add(MemoryContent(
+                        content=memo["insight"],
+                        mime_type=MemoryMimeType.TEXT
+                    ))
+                print(f"✅ Seeded {len(memories)} memories to Redis for user: {user_id}")
+            except Exception as e:
+                print(f"❌ Failed to seed memory for user {user_id}: {e}")
+                continue
 
     def _create_agent(
-        self, 
-        model_context: RedisChatCompletionContext, 
-        memory_adapter: Teachability
+        self,
+        model_context: RedisChatCompletionContext,
+        memory: Mem0Memory
     ) -> AssistantAgent:
-        """Create supervisor agent with memory integration and tools.
+        """Create supervisor agent with Mem0 memory integration and tools.
         
         Args:
             model_context: Redis-backed chat completion context for history
-            memory_adapter: Teachability adapter for long-term memory
+            memory: Mem0 memory instance for long-term memory
             
         Returns:
             AssistantAgent: Configured supervisor with memory and tools
         """
-        return AssistantAgent(
-            name="agent",
-            model_client=self.agent_model,
-            model_context=model_context,  # Chat history management
-            memory=[memory_adapter],      # Long-term memory integration
-            tools=[
-                FunctionTool(
-                    func=self.search_logistics,
-                    description=(
-                        "Time-aware logistics search ONLY: flights, hotels, and intercity/local transport. "
-                        "Use for availability, schedules, prices, carriers/properties, or routes. "
-                        "Arguments: query (required), start_date (optional, YYYY-MM-DD), end_date (optional, YYYY-MM-DD). "
-                        "Always include dates when the user mentions a travel window; if ambiguous, ask for dates before booking guidance. "
-                        "NEVER use this for activities, attractions, neighborhoods, or dining. "
-                        "Results are restricted to reputable flight/hotel/transport sources; top URLs are deeply extracted."
-                    )
-                ),
-                FunctionTool(
-                    func=self.search_general,
-                    description=(
-                        "Time-aware destination research: activities, attractions, neighborhoods, dining, events, local tips. "
-                        "Use for up-to-date things to do, cultural context, and planning inspiration. "
-                        "Arguments: query (required), start_date (optional, YYYY-MM-DD), end_date (optional, YYYY-MM-DD). "
-                        "Scope searches to the relevant season/year when possible and prefer recent sources. "
-                        "NEVER use this for flights, hotels, or transport logistics. "
-                        "Example: 'things to do in Lisbon in June 2026'."
-                    )
-                ),
-            ],
-            system_message=self._get_system_message(),
-            max_tool_iterations=self.config.max_tool_iterations,
-            model_client_stream=True,     # Enable token streaming
-        )
+        print("🤖 Creating AssistantAgent with tools...", flush=True)
+        try:
+            agent = AssistantAgent(
+                name="agent",
+                model_client=self.agent_model,
+                model_context=model_context,  # Chat history management
+                memory=[memory],         # Long term memory management
+                tools=self._get_tools(),
+                system_message=self._get_system_message(),
+                max_tool_iterations=self.config.max_tool_iterations,
+                model_client_stream=True,     # Enable token streaming
+            )
+            print("✅ AssistantAgent created successfully", flush=True)
+            return agent
+        except Exception as e:
+            print(f"❌ Failed to create AssistantAgent: {e}", flush=True)
+            print(f"   Full traceback: {traceback.format_exc()}", flush=True)
+            raise
+    
+    def _get_tools(self) -> List[FunctionTool]:
+        """Get the list of tools for the travel agent.
+        
+        Returns:
+            List[FunctionTool]: List of tools available to the agent
+        """
+        tools = []
+        tools.append(FunctionTool(
+            func=self.search_logistics,
+            description=(
+                "Time-aware logistics search ONLY: flights, hotels, and intercity/local transport. "
+                "Use for availability, schedules, prices, carriers/properties, or routes. "
+                "Arguments: query (required), start_date (optional, YYYY-MM-DD), end_date (optional, YYYY-MM-DD). "
+                "Always include dates when the user mentions a travel window; if ambiguous, ask for dates before booking guidance. "
+                "NEVER use this for activities, attractions, neighborhoods, or dining. "
+                "Results are restricted to reputable flight/hotel/transport sources; top URLs are deeply extracted."
+            )
+        ))        
+        tools.append(FunctionTool(
+            func=self.search_general,
+            description=(
+                "Time-aware destination research: activities, attractions, neighborhoods, dining, events, local tips. "
+                "Use for up-to-date things to do, cultural context, and planning inspiration. "
+                "Arguments: query (required) "
+                "Scope searches to the relevant season/year when possible and prefer recent sources. "
+                "NEVER use this for flights, hotels, or transport logistics. "
+                "Example: 'things to do in Lisbon in June 2026'."
+            )
+        ))
+        print(f"🏁 Tool creation complete. {len(tools)} tools ready.", flush=True)
+        return tools
     
     def _get_system_message(self) -> str:
         """Get the system message for the travel agent supervisor.
@@ -263,18 +307,17 @@ class TravelAgent:
         """
         today = datetime.utcnow().strftime("%Y-%m-%d")
         return (
-            f"You are an expert, time-aware Travel Concierge AI. Today is {today} (UTC). "
-            "Assume your training data may be outdated; for anything time-sensitive, verify with tools.\n\n"
+            f"You are an expert, time-aware, friendly Travel Concierge AI. Today is {today} (UTC). "
+            "Assume your built in knowledge may be outdated; for anything time-sensitive, verify with tools.\n\n"
             "ROLE:\n"
-            "- Discover destinations, plan itineraries, recommend accommodations, and organize logistics.\n"
-            "- Research current options, prices, availability, and on-the-ground activities.\n"
+            "- Discover destinations, plan itineraries, recommend accommodations, and organize logistics on behalf of the user.\n"
+            "- Research current options, prices, availability, and on-the-ground activities using your tools.\n"
             "- Produce clear, actionable itineraries and booking guidance.\n"
             "- Regardless of your prior knowledge, always use search tools for current or future-state information.\n\n"
-            "TOOLING POLICY (TIME AWARENESS):\n"
+            "TOOL USAGE: You have access to the following helpful tools.\n"
             "- Use search_logistics ONLY for flights, hotels, or transport. Include start_date/end_date (YYYY-MM-DD) when known.\n"
             "- Use search_general for activities, attractions, neighborhoods, dining, events, or local tips. Include dates when relevant.\n"
             "- Prefer recent sources (past 12–24 months) and pass explicit dates to tools whenever the user provides a time window.\n"
-            "- If dates are ambiguous (e.g., 'this spring'), ask for clarification before booking-critical steps.\n\n"
             "DISCOVERY:\n"
             "- If missing details, ask targeted questions (exact dates or window, origin/destination, budget, party size, interests,\n"
             "  lodging preferences, accessibility, loyalty programs).\n\n"
@@ -285,7 +328,8 @@ class TravelAgent:
             "- Normalize to a single currency if prices appear; state assumptions.\n"
             "- For itineraries, list day-by-day with times and logistics.\n\n"
             "MEMORY:\n"
-            "- Consider any appended Important insights (long-term memory) before answering and adapt to them."
+            "- Consider any appended important insights (long-term memory) from the user before answering and adapt to them.\n"
+            "- Consider any relevant memories as helpful context but treat current session state as priority since it's current."
         )
 
     # -----------------
@@ -312,63 +356,72 @@ class TravelAgent:
         - Restricts sources to reputable flight/hotel/transport providers and aggregators.
         - Returns the strongest matches first and deeply extracts the top URLs for rich context.
         """
-        include_domains = [
-            # Flights / OTAs
-            "expedia.com", "kayak.com", "travel.google.com",
-            # Hotels / stays
-            "booking.com", "hotels.com",
-        ]
+        print(f"🔧 LOGISTICS SEARCH: {query} | {start_date} to {end_date}", flush=True)
+        
+        try:
+            # Augment query with dates if provided
+            enhanced_query = query
+            if start_date:
+                enhanced_query += f" from {start_date}"
+            if end_date and end_date != start_date:
+                enhanced_query += f" to {end_date}"
+            
+            include_domains = [
+                # Flights / OTAs
+                "expedia.com", "kayak.com", "travel.google.com",
+                # Hotels / stays
+                "booking.com", "hotels.com",
+            ]
 
-        # Build search kwargs
-        date_hint = None
-        if start_date and end_date:
-            date_hint = f" travel dates {start_date} to {end_date}"
-        elif start_date:
-            date_hint = f" travel date on/after {start_date}"
-        elif end_date:
-            date_hint = f" travel date on/before {end_date}"
+            search_kwargs = {
+                "query": enhanced_query,
+                "topic": "general",
+                "search_depth": "advanced",
+                "include_domains": include_domains,
+                "max_results": DEFAULT_MAX_SEARCH_RESULTS,
+            }
 
-        augmented_query = (query.strip() + (date_hint or "")).strip()
+            results = self.tavily_client.search(**search_kwargs)
+            
+            if not results:
+                print(f"⚠️ Empty results from Tavily", flush=True)
+                return {"results": [], "extractions": []}
 
-        search_kwargs = {
-            "query": augmented_query,
-            "topic": "general",
-            "search_depth": "advanced",
-            "include_raw_content": True,
-            "include_domains": include_domains,
-            "max_results": DEFAULT_MAX_SEARCH_RESULTS,
-        }
+            # Sort by score descending and filter out low-quality results
+            all_results = results.get("results", [])
+            sorted_results = sorted(all_results, key=lambda x: x.get("score", 0), reverse=True)
+            trimmed = [r for r in sorted_results if r.get("score", 0) > 0.2]
+            print(f"📊 Found {len(trimmed)}/{len(all_results)} quality results", flush=True)
+            
+            results["results"] = trimmed
 
-        results = self.tavily_client.search(**search_kwargs)
+            # Extract top 2 URLs for deeper context
+            top_urls = [r.get("url") for r in trimmed[:2] if r.get("url")]
+            extractions: List[Dict[str, Any]] = []
+            
+            if top_urls:
+                try:
+                    extracted = self.tavily_client.extract(urls=top_urls)
+                    if isinstance(extracted, dict) and extracted.get("results"):
+                        extractions = extracted.get("results", [])
+                    elif isinstance(extracted, list):
+                        extractions = extracted
+                    print(f"📄 Extracted {len(extractions)} content blocks", flush=True)
+                except Exception as extract_e:
+                    print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
 
-        # Sort by score descending and filter out low-quality results
-        all_results = results.get("results", [])
-        sorted_results = sorted(all_results, key=lambda x: x.get("score", 0), reverse=True)
-        trimmed = [r for r in sorted_results if r.get("score", 0) > 0.2]
-        results["results"] = trimmed
-
-        # Extract top 2 URLs for deeper context
-        top_urls = [r.get("url") for r in trimmed[:2] if r.get("url")]
-        extractions: List[Dict[str, Any]] = []
-        if top_urls:
-            extracted = self.tavily_client.extract(urls=top_urls)
-            if isinstance(extracted, dict) and extracted.get("results"):
-                extractions = extracted.get("results", [])
-            elif isinstance(extracted, list):
-                extractions = extracted
-
-        results["extractions"] = extractions
-
-        # print("\nLOGISTICS SEARCH RESULTS", flush=True)
-        # print("QUERY:", query, flush=True)
-        # print("RESULTS:", results, flush=True)
-        return results
+            results["extractions"] = extractions
+            print(f"✅ LOGISTICS COMPLETE: {len(trimmed)} results + {len(extractions)} extractions", flush=True)
+            return results
+            
+        except Exception as e:
+            error_msg = f"❌ LOGISTICS ERROR: {str(e)}"
+            print(error_msg, flush=True)
+            return {"error": error_msg, "results": [], "extractions": []}
 
     def search_general(
         self,
         query: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """📍 General destination research: activities, attractions, neighborhoods, dining, events.
 
@@ -381,38 +434,47 @@ class TravelAgent:
 
         Behavior
         - Runs an open web search (no logistics domains restriction) with raw content for context.
-        - Optionally scope the search by start_date/end_date (YYYY-MM-DD) for time-relevant results.
         """
-        date_hint = None
-        if start_date and end_date:
-            date_hint = f" for {start_date} to {end_date}"
-        elif start_date:
-            date_hint = f" for {start_date}"
-        elif end_date:
-            date_hint = f" up to {end_date}"
+        print(f"🔧 GENERAL SEARCH: {query}", flush=True)        
+        try:
+            search_kwargs = {
+                "query": query,
+                "topic": "general",
+                "search_depth": "advanced",
+                "include_raw_content": True,
+                "max_results": DEFAULT_MAX_SEARCH_RESULTS,
+            }
+            
+            print(f"   🔍 Calling Tavily search with kwargs: {search_kwargs}", flush=True)
+            results = self.tavily_client.search(**search_kwargs)
+            print(f"   ✅ Tavily search completed. Raw results type: {type(results)}", flush=True)
+            
+            if not results:
+                print(f"   ⚠️ Empty results from Tavily", flush=True)
+                return {"results": []}
+            
+            # Filter results by score
+            all_results = results.get("results", [])
+            print(f"   📊 Found {len(all_results)} raw results", flush=True)
+            
+            filtered_results = [r for r in all_results if r.get("score", 0) > 0.2]
+            print(f"   🎯 After filtering (score > 0.2): {len(filtered_results)} results", flush=True)
+            
+            results["results"] = filtered_results
 
-        augmented_query = (query.strip() + (date_hint or "")).strip()
-
-        search_kwargs = {
-            "query": augmented_query,
-            "topic": "general",
-            "search_depth": "advanced",
-            "include_raw_content": True,
-            "max_results": DEFAULT_MAX_SEARCH_RESULTS,
-        }
-        results = self.tavily_client.search(**search_kwargs)
-        results["results"] = [r for r in results.get("results", []) if r.get("score", 0) > 0.2]
-
-        # print("\nGENERAL SEARCH RESULTS", flush=True)
-        # print("QUERY:", query, flush=True)
-        # print("RESULTS:", results, flush=True)
-        return results
+            print(f"   🏁 GENERAL SEARCH COMPLETE. Returning {len(filtered_results)} results", flush=True)
+            return results
+            
+        except Exception as e:
+            error_msg = f"❌ GENERAL SEARCH ERROR: {str(e)}"
+            print(error_msg, flush=True)
+            print(f"   Full traceback: {traceback.format_exc()}", flush=True)
+            return {"error": error_msg, "results": []}
 
     # -----------------
     # Chat and Memory Interface  
     # -----------------
     
-
     async def stream_chat_turn_with_events(self, user_id: str, user_message: str) -> AsyncGenerator[tuple[str, dict | None], None]:
         """
         Yield (growing assistant reply, normalized event | None) pairs as the agent streams.
@@ -426,6 +488,8 @@ class TravelAgent:
           - llm_message_complete (final assistant text)
         """
         ctx = self._get_or_create_user_ctx(user_id)
+        
+        # Note: User message will be stored async after response completes
         
         def _html(icon: str, title: str, message: str) -> str:
             safe_icon = icon or ""
@@ -708,31 +772,31 @@ class TravelAgent:
             yield buffer, None
 
 
-    async def chat(self, message: str, user_id: str) -> str:
-        """Simple chat interface that processes a message and returns the final response.
-        
-        Args:
-            message: User's input message
-            user_id: User identifier for context isolation
-            
-        Returns:
-            str: Final assistant response
-        """
-        ctx = self._get_or_create_user_ctx(user_id)
-        task_result = await ctx.agent.run(task=message)
-        
-        # Extract the final message content from the task result
-        messages = getattr(task_result, 'messages', [])
-        if messages:
-            final_message = messages[-1]
-            if hasattr(final_message, 'content') and isinstance(final_message.content, str):
-                return final_message.content
-        
-        return "I apologize, but I couldn't generate a response."
-
     # -----------------
     # Utility Methods
     # -----------------
+
+    async def store_memory(self, user_id: str, user_message: str) -> None:
+        """Store user message in memory asynchronously.
+        
+        This method is called after the response is complete to avoid blocking
+        the initial request processing.
+        
+        Args:
+            user_id: User identifier for context isolation
+            user_message: The user's input message
+        """
+        try:
+            ctx = self._get_or_create_user_ctx(user_id)
+            
+            # Store user message
+            await ctx.memory.add(MemoryContent(
+                content=user_message,
+                mime_type=MemoryMimeType.TEXT
+            ))
+            
+        except Exception as e:
+            print(f"⚠️ Failed to store conversation memory for user {user_id}: {e}")
 
     async def get_chat_history(self, user_id: str, n: Optional[int] = None) -> List[Dict[str, str]]:
         """Retrieve chat history for a user from Redis storage.
@@ -783,14 +847,6 @@ class TravelAgent:
             print(f"Error retrieving chat history for user {user_id}: {e}")
             return []
 
-    def get_user_list(self) -> List[str]:
-        """Get list of all active user IDs.
-        
-        Returns:
-            List[str]: List of user IDs that have been created and cached
-        """
-        return list(self._user_ctx_cache.keys())
-
     def user_exists(self, user_id: str) -> bool:
         """Check if a user context exists in the cache.
         
@@ -803,14 +859,15 @@ class TravelAgent:
         return user_id in self._user_ctx_cache
 
     def reset_user_memory(self, user_id: str) -> None:
-        """Reset a user's memory by removing their cached context.
+        """Reset a user's Mem0 memory by removing their cached context.
         
-        This clears the user's insight bank and forces recreation of
-        a fresh memory controller on next interaction.
+        This clears the user's cached context and forces recreation of
+        a fresh Mem0 memory instance on next interaction.
         
         Args:
             user_id: User identifier whose memory should be reset
         """
         if user_id in self._user_ctx_cache:
+            print(f"🗑️  Resetting Mem0 memory for user: {user_id}")
             self._user_ctx_cache.pop(user_id, None)
     

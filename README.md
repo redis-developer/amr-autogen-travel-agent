@@ -1,10 +1,10 @@
 # 🌍 Autogen Travel Concierge 
 
-A sophisticated AI travel planning assistant showcasing AutoGen's advanced memory capabilities with dual-layer memory architecture: Redis-backed chat history and Task-Centric Memory (TCM) for intelligent learning.
+A sophisticated AI travel planning assistant showcasing AutoGen's advanced memory capabilities with dual-layer memory architecture: Redis-backed chat history and Mem0 based long term memory that remembers user preferences.
 
 ## 🧠 What's included?
 
-- **🎯 Dual-Layer Memory**: Short-term chat history (Redis) + Long-term learning (TCM)
+- **🎯 Dual-Layer Memory**: Short-term chat history (Redis) + Long-term learning (Mem0+Redis)
 - **👥 User Isolation**: Pre-seeded users get completely separate memory contexts
 - **🔄 Session Persistence**: Your conversations and preferences survive app restarts
 - **📚 Intelligent Learning**: The agent learns your travel preferences automatically
@@ -17,7 +17,7 @@ A sophisticated AI travel planning assistant showcasing AutoGen's advanced memor
 You'll need three API keys:
 - **OpenAI API Key**: Get from [platform.openai.com](https://platform.openai.com/api-keys)
 - **Tavily API Key**: Get from [tavily.com](https://tavily.com) (free tier available)  
-- **Redis URL**: For chat history storage (see Step 2)
+- **Redis URL**: See step two
 
 ### Step 2: Set Up Redis
 You have 3 options for Redis:
@@ -68,17 +68,7 @@ The application will:
 
 ## 👤 User Profile Configuration
 
-The demo comes with pre-configured user profiles (Tyler and Amanda) that have distinct travel preferences. You can easily customize these or add new profiles by editing `context/seed.json`.
-
-### Current Profiles
-
-**Tyler** 🎒 *The Adventure Eco-Warrior*
-- Budget-friendly backpacking and extreme sports enthusiast
-- Passionate about sustainable travel and environmental conservation
-
-**Amanda** 🏨 *The Luxury Culture Connoisseur*
-- Premium experiences with five-star accommodations and fine dining
-- Art, culture, and history enthusiast who loves museums and guided tours
+The demo comes with pre-configured user profiles (Tyler, Purna, and Jan) that have distinct travel preferences. You can easily customize these or add new profiles by editing `context/seed.json`.
 
 ---
 
