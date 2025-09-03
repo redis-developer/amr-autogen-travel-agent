@@ -478,4 +478,26 @@ h1, h2, h3, h4, h5, h6 {
     overflow-y: auto !important;
 }
 
+/* Calendar status message styling */
+.calendar-status {
+    background-color: var(--dusk) !important;
+    border: 1px solid var(--violet) !important;
+    color: var(--white) !important;
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+    margin-top: 8px !important;
+    border-radius: 6px !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+}
+
+.calendar-status[value*="✅"] {
+    border-color: var(--yellow) !important;
+    background-color: rgba(220, 255, 30, 0.1) !important;
+}
+
+.calendar-status[value*="❌"] {
+    border-color: var(--redis-red) !important;
+    background-color: rgba(255, 68, 56, 0.1) !important;
+}
+
 

@@ -10,6 +10,7 @@ A sophisticated AI travel planning assistant showcasing AutoGen's advanced memor
 - **📚 Intelligent Learning**: The agent learns your travel preferences automatically
 - **🌐 Real-time Search**: Live travel information via Tavily search API
 - **💬 Clean Chat UI**: Gradio interface with user management
+ - **📅 Calendar Export (ICS)**: Generate a calendar file for your itinerary and open it directly in your default calendar app
 
 ## 🚀 Quick Setup (<5 minutes)
 
@@ -65,6 +66,7 @@ The application will:
 - ✅ Validate your configuration and API connections
 - ✅ Initialize the dual-layer memory system
 - ✅ Load the user management interface
+- ✅ Enable calendar export/open from finalized itineraries
 
 ## 👤 User Profile Configuration
 
@@ -73,3 +75,4 @@ The demo comes with pre-configured user profiles (Tyler, Purna, and Jan) that ha
 ---
 
 **🚀 Ready to see AI memory in action? Start chatting and watch your travel preferences get smarter!**
+

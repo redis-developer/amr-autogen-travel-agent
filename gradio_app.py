@@ -4,6 +4,8 @@ warnings.filterwarnings("ignore")
 import asyncio
 import gradio as gr
 import os
+import subprocess
+import platform
 from typing import List, Dict
 from pathlib import Path
 
@@ -21,6 +23,49 @@ def load_css() -> str:
         print(f"Warning: CSS file not found at {css_path}")
         return ""
 
+def open_calendar_file(file_path: str) -> tuple[str, bool]:
+    """Open a calendar file with the system's default calendar application.
+    
+    Args:
+        file_path: Path to the .ics calendar file
+        
+    Returns:
+        Tuple of (message, success) where message describes the result
+    """
+    if not file_path or not os.path.exists(file_path):
+        return "❌ Calendar file not found", False
+    
+    try:
+        system = platform.system()
+        
+        if system == "Darwin":  # macOS
+            # Use 'open' command to open with default calendar app (Calendar.app)
+            subprocess.run(["open", file_path], check=True)
+            return "📅 Calendar opened with Calendar.app", True
+            
+        elif system == "Windows":
+            # Use 'start' command to open with default calendar app
+            subprocess.run(["start", file_path], shell=True, check=True)
+            return "📅 Calendar opened with default calendar app", True
+            
+        elif system == "Linux":
+            # Use 'xdg-open' to open with default calendar app
+            subprocess.run(["xdg-open", file_path], check=True)
+            return "📅 Calendar opened with default calendar app", True
+            
+        else:
+            return f"❓ Unsupported system: {system}", False
+            
+    except subprocess.CalledProcessError as e:
+        return f"❌ Failed to open calendar: {e}", False
+    except FileNotFoundError:
+        if system == "Linux":
+            return "❌ xdg-open not found. Please install xdg-utils", False
+        else:
+            return "❌ System command not found", False
+    except Exception as e:
+        return f"❌ Error opening calendar: {e}", False
+
 
 class TravelAgentUI:
     """
@@ -34,6 +79,7 @@ class TravelAgentUI:
         self.current_user_id = "Tyler"  # Default user ID
         self.initial_history = []  # Will be populated async
         self.user_ids = []  # Dynamic users loaded from seed
+        self.latest_calendar_file = None  # Track latest generated calendar
     
     async def initialize_chat_history(self):
         """Initialize seed data and load initial chat history for the default user."""
@@ -228,6 +274,22 @@ class TravelAgentUI:
                     # Control buttons
                     with gr.Row():
                         clear_btn = gr.Button("Clear Chat", variant="secondary", size="sm")
+                        calendar_open_btn = gr.Button(
+                            "📅 Open Calendar", 
+                            variant="secondary", 
+                            size="sm",
+                            visible=False
+                        )
+                    
+                    # Status message for calendar operations
+                    calendar_status = gr.Textbox(
+                        value="",
+                        show_label=False,
+                        container=False,
+                        interactive=False,
+                        visible=False,
+                        elem_classes=["calendar-status"]
+                    )
 
                 # Agent Logs Panel (30% width)
                 with gr.Column(scale=3, min_width=0):
@@ -237,6 +299,7 @@ class TravelAgentUI:
                         </div>
                     """)
                     events_state = gr.State([])
+                    calendar_file_state = gr.State(None)
                     events_panel = gr.HTML(
                         value="""
                         <div style="height: 500px; padding: 15px; background: #163341; border-radius: 8px; color: #8A99A0; overflow-y: auto;">
@@ -250,37 +313,51 @@ class TravelAgentUI:
             
             
             # Event handler functions
-            async def handle_streaming_chat(message, history, events):
+            async def handle_streaming_chat(message, history, events, calendar_file):
                 """Handle streaming chat and side-panel event rendering."""
                 if not message.strip():
                     events_html = ""
-                    yield history, events, events_html
+                    yield history, events, events_html, calendar_file, gr.update(visible=False), gr.update(value="", visible=False)
                     return
                 
                 # Add user message to history and show it immediately
                 history = history + [{"role": "user", "content": message}]
                 # Clear events at the start of each new submit
                 events = []
-                yield history, events, ""
+                yield history, events, "", calendar_file, gr.update(visible=False), gr.update(value="", visible=False)
                 
                 # Initialize assistant message with animated thinking dots
                 history = history + [{"role": "assistant", "content": '<span class="thinking-animation">●●●</span>'}]
                 events_html = "".join([e.get("html", "") for e in events[-200:]])
-                yield history, events, events_html
+                yield history, events, events_html, calendar_file, gr.update(visible=False), gr.update(value="", visible=False)
                 
                 final_response = ""
+                calendar_generated = False
+                latest_calendar_file = calendar_file
+                
                 try:
                     # Stream the response with events
                     async for partial_response, evt in self.agent.stream_chat_turn_with_events(self.current_user_id, message):
                         # Keep the thinking dots visible while streaming
                         history[-1] = {"role": "assistant", "content": partial_response}
                         final_response = partial_response  # Keep track of final response
+                        
+                        # Check if this is a calendar generation event
+                        if evt and evt.get("type") == "tool_result" and evt.get("tool_name") == "generate_calendar_ics":
+                            calendar_generated = True
+                            if evt.get("file_path"):
+                                latest_calendar_file = evt.get("file_path")
+                                self.latest_calendar_file = latest_calendar_file
+                        
                         # Append new event if any
                         if evt is not None:
                             events = events + [evt]
                         # Render compact HTML for events
                         events_html = "".join([e.get("html", "") for e in events[-200:]])
-                        yield history, events, events_html
+                        
+                        # Update calendar download visibility
+                        download_visible = calendar_generated or (latest_calendar_file is not None)
+                        yield history, events, events_html, latest_calendar_file, gr.update(visible=download_visible), gr.update(value="", visible=False)
                     
                     # After streaming completes, store conversation memory asynchronously
                     if final_response and not final_response.endswith('●●●</span>'):
@@ -293,32 +370,36 @@ class TravelAgentUI:
                             )
                         )
                     
+                    # Final yield with calendar file info
+                    download_visible = calendar_generated or (latest_calendar_file is not None)
+                    yield history, events, events_html, latest_calendar_file, gr.update(visible=download_visible), gr.update(value="", visible=False)
+                    
                 except Exception as e:
                     error_msg = f"Sorry, I encountered an error: {str(e)}"
                     # Replace thinking indicator with error message
                     history[-1] = {"role": "assistant", "content": error_msg}
                     print(f"❌ Error during streaming chat: {e}", flush=True)
                     events_html = "".join([e.get("html", "") for e in events[-200:]])
-                    yield history, events, events_html
+                    yield history, events, events_html, latest_calendar_file, gr.update(visible=False), gr.update(value="", visible=False)
             
             
             # Event handlers for chat - streaming version
-            async def handle_submit_and_clear(message, history, events):
+            async def handle_submit_and_clear(message, history, events, calendar_file):
                 """Handle message submission and immediately clear input."""
-                async for h, ev, html in handle_streaming_chat(message, history, events):
-                    yield h, ev, html, ""
+                async for h, ev, html, cal_file, btn_update, status_update in handle_streaming_chat(message, history, events, calendar_file):
+                    yield h, ev, html, "", cal_file, btn_update, status_update
             
             msg.submit(
                 handle_submit_and_clear,
-                [msg, chatbot, events_state],
-                [chatbot, events_state, events_panel, msg],
+                [msg, chatbot, events_state, calendar_file_state],
+                [chatbot, events_state, events_panel, msg, calendar_file_state, calendar_open_btn, calendar_status],
                 queue=True
             )
             
             send_btn.click(
                 handle_submit_and_clear,
-                [msg, chatbot, events_state],
-                [chatbot, events_state, events_panel, msg],
+                [msg, chatbot, events_state, calendar_file_state],
+                [chatbot, events_state, events_panel, msg, calendar_file_state, calendar_open_btn, calendar_status],
                 queue=True
             )
             
@@ -335,17 +416,17 @@ class TravelAgentUI:
                             </div>
                         </div>
                         """
-                        return history, [], initial_events_html, ""
+                        return history, [], initial_events_html, "", None, gr.update(visible=False), gr.update(value="", visible=False)
                     except Exception as e:
                         print(f"Error switching to user {user_id}: {e}")
-                        return [], [], "", ""
+                        return [], [], "", "", None, gr.update(visible=False), gr.update(value="", visible=False)
                 return _handler
 
             # Attach selection handlers for each user tab
             for uid, tab in (user_tab_components or {}).items():
                 tab.select(
                     make_handle_tab(uid),
-                    outputs=[chatbot, events_state, events_panel, msg],
+                    outputs=[chatbot, events_state, events_panel, msg, calendar_file_state, calendar_open_btn, calendar_status],
                     queue=True
                 )
             
@@ -361,12 +442,28 @@ class TravelAgentUI:
                     </div>
                 </div>
                 """
-                return cleared_history, [], initial_events_html, ""
+                return cleared_history, [], initial_events_html, "", None, gr.update(visible=False), gr.update(value="", visible=False)
             
             clear_btn.click(
                 handle_clear_chat,
-                outputs=[chatbot, events_state, events_panel, msg],
+                outputs=[chatbot, events_state, events_panel, msg, calendar_file_state, calendar_open_btn, calendar_status],
                 queue=True
+            )
+            
+            # Calendar open functionality
+            def handle_calendar_open(calendar_file):
+                """Handle opening the calendar file with system default app."""
+                if not calendar_file:
+                    return gr.update(value="⚠️ No calendar file available to open", visible=True)
+                
+                message, success = open_calendar_file(calendar_file)
+                return gr.update(value=message, visible=True)
+            
+            calendar_open_btn.click(
+                handle_calendar_open,
+                inputs=[calendar_file_state],
+                outputs=[calendar_status],
+                queue=False
             )
         
         return interface
