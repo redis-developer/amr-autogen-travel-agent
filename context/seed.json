@@ -3,12 +3,10 @@
     "Tyler": [],
     "Purna": [
       {
-        "insight": "Purna is an adventure-seeking, outdoor-loving software product manager who works for Redis and flies exclusively Delta airlines due to her SkyMiles membership. She is based out of Atlanta."
-      }
-    ],
-    "Jan": [
+        "insight": "Purna is an adventure-seeking, outdoor-loving software product manager who works for Redis."
+      },
       {
-        "insight": "Jan is a luxury traveler and product manager at Azure who values premium experiences, five-star accommodations, fine dining, comfort, and high-end services, often choosing spa resorts and boutique hotels for his trips."
+        "insight": "Purna flies exclusively Delta airlines due to her SkyMiles membership. She lives in Atlanta."
       }
     ]
   }

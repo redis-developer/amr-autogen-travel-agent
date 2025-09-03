@@ -166,7 +166,6 @@ class TravelAgent:
             },
         )
 
-    
     def _get_or_create_user_ctx(self, user_id: str) -> UserCtx:
         """Get or create user-specific context with Mem0 memory and agent components.
         
@@ -185,7 +184,7 @@ class TravelAgent:
         # Create Mem0 memory instance
         mem0_memory = self._create_memory(user_id)
         
-        # Initialize chat history management
+        # Initialize chat history & summarization management
         model_context = RedisChatCompletionContext(
             redis_url=self.config.redis_url,
             user_id=user_id,
