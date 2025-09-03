@@ -1,5 +1,5 @@
 import json
-import os
+import asyncio
 from typing import Any, List, Mapping, Optional
 
 from redis import Redis
@@ -15,6 +15,8 @@ from autogen_core.models import (
     UserMessage,
     FunctionExecutionResultMessage,
 )
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
 
 class RedisChatCompletionContextConfig(BaseModel):
     buffer_size: int = Field(default=6, description="Maximum number of messages to keep in buffer")
@@ -22,14 +24,16 @@ class RedisChatCompletionContextConfig(BaseModel):
     redis_key_prefix: str = Field(default="chat_history", description="Redis key prefix for storing messages")
     user_id: str = Field(description="Unique identifier for this chat context")
     initial_messages: List[LLMMessage] | None = None
+    summary_model: str = Field(default="gpt-4o-mini", description="OpenAI model used for summarization")
 
 
 class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompletionContextConfig]):
-    """A Redis-backed chat completion context that stores messages in Redis and maintains
-    a buffer of the last n messages, where n is the buffer size.
+    """A Redis-backed chat completion context with automatic conversation summarization.
 
     This implementation stores all messages persistently in Redis while providing
-    efficient access to the most recent messages based on the buffer size.
+    efficient access to the most recent messages based on the buffer size. When the
+    conversation grows beyond the buffer size, it automatically generates and maintains
+    a rolling summary to preserve context.
 
     Args:
         buffer_size (int): The maximum number of messages to keep in the buffer.
@@ -37,6 +41,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         redis_key_prefix (str): Prefix for Redis keys.
         user_id (str): Unique identifier for this chat context.
         initial_messages (List[LLMMessage] | None): The initial messages.
+        summary_model (str): OpenAI model used for summarization.
     """
 
     component_config_schema = RedisChatCompletionContextConfig
@@ -48,6 +53,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         redis_key_prefix: str = "chat_history",
         user_id: str = "default",
         initial_messages: List[LLMMessage] | None = None,
+        summary_model: str = "gpt-4.1-nano",
     ) -> None:
         if buffer_size <= 0:
             raise ValueError("buffer_size must be greater than 0.")
@@ -56,12 +62,18 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         self._redis_url = redis_url
         self._redis_key_prefix = redis_key_prefix
         self._user_id = user_id
+        self._summary_model = summary_model
         
         # Create Redis client
         self._redis_client = Redis.from_url(redis_url, decode_responses=True)
         
         # Redis keys for this context
         self._messages_key = f"{redis_key_prefix}:{user_id}:messages"
+        self._summary_key = f"{redis_key_prefix}:{user_id}:summary"
+        self._summary_upto_key = f"{redis_key_prefix}:{user_id}:summary_upto"
+        
+        # OpenAI client for summarization
+        self._summary_client = OpenAIChatCompletionClient(model=summary_model)
         
         # Initialize Redis with initial messages if provided
         if initial_messages:
@@ -112,6 +124,11 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
     async def add_message(self, message: LLMMessage) -> None:
         """Add a message to the Redis-backed context."""
         self._add_message_to_redis(message)
+        
+        # Check if we should summarize
+        if self._should_summarize():
+            print(f"🧩 Summarization check passed for user {self._user_id}. Scheduling background update…")
+            asyncio.create_task(self._update_summary())
 
     async def get_messages(self, n: Optional[int] = None) -> List[LLMMessage]:
         """Get at most `n` recent messages from Redis.
@@ -153,6 +170,12 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         if messages and isinstance(messages[0], FunctionExecutionResultMessage):
             # Remove the first message from the list
             messages = messages[1:]
+        
+        # Add summary as first message if available
+        summary_text = self._redis_client.get(self._summary_key)
+        if summary_text:
+            summary_msg = SystemMessage(content=f"Previous conversation summary:\n{summary_text}")
+            messages.insert(0, summary_msg)
         
         return messages
     
@@ -201,12 +224,128 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
     async def clear(self) -> None:
         """Clear all messages from the context and Redis."""
         self._redis_client.delete(self._messages_key)
+        self._redis_client.delete(self._summary_key)
+        self._redis_client.delete(self._summary_upto_key)
 
 
     def __del__(self):
         """Cleanup Redis connection when instance is destroyed."""
-        if hasattr(self, '_redis_client'):
+        self._redis_client.close()
+
+    # ------------------------------
+    # Incremental Summarization
+    # ------------------------------
+    
+    def _should_summarize(self) -> bool:
+        """Check if we should trigger summarization."""
+        if not self._summary_client:
+            return False
+        
+        # Summarize when we have more than buffer_size messages
+        total_messages = self._redis_client.llen(self._messages_key)
+        should = total_messages > self._buffer_size
+        if should:
+            print(f"🧪 Should summarize? yes — total={total_messages}, buffer={self._buffer_size}")
+        else:
+            print(f"🧪 Should summarize? no — total={total_messages}, buffer={self._buffer_size}")
+        return should
+    
+    async def _update_summary(self) -> None:
+        """Generate and store an updated conversation summary using only newly expired messages."""
+        try:
+            total = self._redis_client.llen(self._messages_key)
+            buffer = self._buffer_size
+            expired_count = max(0, total - buffer)
+            last_summarized = int(self._redis_client.get(self._summary_upto_key) or 0)
+            print(f"📏 Summary delta calc — total={total}, buffer={buffer}, expired={expired_count}, summarized_upto={last_summarized}")
+
+            if expired_count <= last_summarized:
+                print("ℹ️ No new expired messages to summarize.")
+                return
+
+            # Compute slice of newly expired messages (Redis newest-first indexing)
+            start_idx = buffer + last_summarized
+            end_idx = buffer + expired_count - 1
+            print(f"📚 Fetching newly expired slice with LRANGE {start_idx}..{end_idx}")
+            raw_slice = self._redis_client.lrange(self._messages_key, start_idx, end_idx)
+            if not raw_slice:
+                print("⚠️ Newly expired slice was empty; skipping.")
+                self._redis_client.set(self._summary_upto_key, str(expired_count))
+                return
+
+            # Convert to readable turns in chronological order
+            new_expired_turns = self._format_raw_messages_as_turns(list(reversed(raw_slice)))
+            print(f"🧾 Newly expired usable turns: {len(new_expired_turns)}")
+            if not new_expired_turns:
+                print("⚠️ No user/assistant turns in newly expired slice; skipping.")
+                self._redis_client.set(self._summary_upto_key, str(expired_count))
+                return
+
+            existing_summary = self._redis_client.get(self._summary_key)
+            print(f"🧱 Existing summary present? {'yes' if existing_summary else 'no'}; folding in {len(new_expired_turns)} new turns…")
+
+            new_summary = await self._generate_summary(existing_summary, new_expired_turns)
+            if new_summary:
+                self._redis_client.set(self._summary_key, new_summary)
+                self._redis_client.set(self._summary_upto_key, str(expired_count))
+                print(f"✅ Summary updated. summarized_upto -> {expired_count}")
+            else:
+                print("⚠️ LLM did not return a summary update; leaving previous summary intact.")
+        except Exception as e:
+            print(f"Error updating summary for user {self._user_id}: {e}")
+    
+    def _format_raw_messages_as_turns(self, raw_messages: List[str]) -> List[str]:
+        """Format raw serialized messages into simple 'User:'/'Assistant:' turns."""
+        turns: List[str] = []
+        for raw_message in raw_messages:
             try:
-                self._redis_client.close()
+                data = json.loads(raw_message)
+                msg_type = data.get("type")
+                content = (data.get("content") or "").strip()
+                if not content:
+                    continue
+                if msg_type == "UserMessage":
+                    turns.append(f"User: {content}")
+                elif msg_type == "AssistantMessage":
+                    turns.append(f"Assistant: {content}")
             except Exception:
-                pass  # Ignore errors during cleanup
+                continue
+        return turns
+    
+    async def _generate_summary(self, existing_summary: str | None, recent_messages: List[str]) -> str | None:
+        """Generate a conversation summary using the OpenAI client."""
+        if not recent_messages:
+            return existing_summary
+        
+        # Build the prompt
+        system_prompt = (
+            "You are summarizing a travel planning conversation between a human and an AI travel concierge. "
+            "Keep track of key details like destinations, timleines, preferences, decisions made, and open questions. "
+            "Be concise and store the summary as a paragraph of text. Focus on key details and actionable information that will help the agent plan better. "
+        )
+        
+        if existing_summary:
+            user_prompt = (
+                f"Previous summary:\n{existing_summary}\n\n"
+                f"Recent conversation segments:\n" + "\n".join(recent_messages) + "\n\n"
+                "Update the summary to include new information while keeping it as a concise paragraph; no more than 300-500 words."
+            )
+        else:
+            user_prompt = (
+                f"Conversation to summarize:\n" + "\n".join(recent_messages) + "\n\n"
+                "Create a concise summary of this travel planning conversation as a short paragraph with no more than 300-500 words."
+            )
+        
+        try:
+            # Use the autogen OpenAI client
+            response = await self._summary_client.create([
+                SystemMessage(content=system_prompt),
+                UserMessage(content=user_prompt, source="user"),
+            ])
+            
+            if response.content:
+                return response.content.strip()
+        except Exception as e:
+            print(f"Error generating summary: {e}")
+        
+        return None

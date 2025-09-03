@@ -1,4 +1,3 @@
-# # Suppress all warnings globally (most aggressive approach)
 import warnings
 warnings.filterwarnings("ignore")
 import asyncio
@@ -13,7 +12,6 @@ from agent import TravelAgent
 from config import get_config, validate_dependencies
 
 
-
 def load_css() -> str:
     """Load CSS from external file."""
     css_path = Path(__file__).parent / "assets" / "styles.css"
@@ -22,6 +20,7 @@ def load_css() -> str:
     except FileNotFoundError:
         print(f"Warning: CSS file not found at {css_path}")
         return ""
+
 
 def open_calendar_file(file_path: str) -> tuple[str, bool]:
     """Open a calendar file with the system's default calendar application.
@@ -37,25 +36,20 @@ def open_calendar_file(file_path: str) -> tuple[str, bool]:
     
     try:
         system = platform.system()
-        
         if system == "Darwin":  # macOS
             # Use 'open' command to open with default calendar app (Calendar.app)
             subprocess.run(["open", file_path], check=True)
             return "📅 Calendar opened with Calendar.app", True
-            
         elif system == "Windows":
             # Use 'start' command to open with default calendar app
             subprocess.run(["start", file_path], shell=True, check=True)
             return "📅 Calendar opened with default calendar app", True
-            
         elif system == "Linux":
             # Use 'xdg-open' to open with default calendar app
             subprocess.run(["xdg-open", file_path], check=True)
             return "📅 Calendar opened with default calendar app", True
-            
         else:
             return f"❓ Unsupported system: {system}", False
-            
     except subprocess.CalledProcessError as e:
         return f"❌ Failed to open calendar: {e}", False
     except FileNotFoundError:
@@ -84,23 +78,17 @@ class TravelAgentUI:
     async def initialize_chat_history(self):
         """Initialize seed data and load initial chat history for the default user."""
         try:
-            # First, initialize seed data for all users
+            # Init seed data for all users
             await self.agent.initialize_seed_data()
             users = self.agent.get_all_user_ids()
-            if "Tyler" in users:
-                remaining = sorted([u for u in users if u != "Tyler"])
-                self.user_ids = ["Tyler"] + remaining
-            else:
-                self.user_ids = sorted(users)
-            
-            # Then load chat history for the current user
+            self.user_ids = sorted(users)
+            # Load chat history for the current user
             self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
             print(f"✅ Loaded {len(self.initial_history)} initial messages for user: {self.current_user_id}")
         except Exception as e:
             print(f"⚠️ Warning: Could not load initial chat history: {e}")
             self.initial_history = []
 
-    
     async def switch_user(self, new_user_id: str) -> List[dict]:
         """Switch to a different user profile and load their chat history.
         
@@ -123,12 +111,10 @@ class TravelAgentUI:
         # Return the new user's chat history
         return await self.agent.get_chat_history(new_user_id, n=-1)
     
-
     async def clear_chat_history(self) -> List[dict]:
         """Clear chat history for the current user from Redis and UI."""
         if not self.current_user_id:
             return []
-        
         try:
             # Get the user context and clear its Redis history
             ctx = self.agent._get_or_create_user_ctx(self.current_user_id)
@@ -310,7 +296,6 @@ class TravelAgentUI:
                         """, 
                         elem_id="events-panel"
                     )
-            
             
             # Event handler functions
             async def handle_streaming_chat(message, history, events, calendar_file):
