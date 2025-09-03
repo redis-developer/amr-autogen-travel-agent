@@ -22,7 +22,11 @@ class AppConfig(BaseSettings):
     mem0_model: str = Field(default="gpt-4.1-mini", env="MEM0_MODEL", description="OpenAI LLM name for the travel agent memory system")
     mem0_embedding_model: str = Field(default="text-embedding-3-small", env="MEM0_EMBEDDING_MODEL", description="OpenAI embedding model for Mem0 memory system")
     mem0_embedding_model_dims: int = Field(default=1536, env="MEM0_EMBDDING_MODEL_DIMS", description="Embedding dimensions for OpenAI embedding model")
+
+    # Other config
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
+    max_chat_history_size: int = Field(default=6, env="MAX_CHAT_HISTORY_SIZE", description="Maximum chat history size")
+    max_search_results: int = Field(default=5, env="MAX_SEARCH_RESULTS", description="Maximum search results from Tavily client")
 
     # Redis Configuration
     redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL", description="Redis connection URL")
