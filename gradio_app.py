@@ -81,7 +81,13 @@ class TravelAgentUI:
             # Init seed data for all users
             await self.agent.initialize_seed_data()
             users = self.agent.get_all_user_ids()
-            self.user_ids = sorted(users)
+            # Sort users but ensure Tyler (current_user_id) is first if present
+            sorted_users = sorted(users)
+            if self.current_user_id in sorted_users:
+                sorted_users.remove(self.current_user_id)
+                self.user_ids = [self.current_user_id] + sorted_users
+            else:
+                self.user_ids = sorted_users
             # Load chat history for the current user
             self.initial_history = await self.agent.get_chat_history(self.current_user_id, n=-1)
             print(f"✅ Loaded {len(self.initial_history)} initial messages for user: {self.current_user_id}")

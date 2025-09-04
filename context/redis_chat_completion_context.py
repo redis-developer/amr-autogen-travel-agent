@@ -321,19 +321,19 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         system_prompt = (
             "You are summarizing a travel planning conversation between a human and an AI travel concierge. "
             "Keep track of key details like destinations, timleines, preferences, decisions made, and open questions. "
-            "Be concise and store the summary as a paragraph of text. Focus on key details and actionable information that will help the agent plan better. "
+            "Be concise but complete. Focus on key details and actionable information that will help the agent plan better. "
         )
         
         if existing_summary:
             user_prompt = (
                 f"Previous summary:\n{existing_summary}\n\n"
                 f"Recent conversation segments:\n" + "\n".join(recent_messages) + "\n\n"
-                "Update the summary to include new information while keeping it as a concise paragraph; no more than 300-500 words."
+                "Update the summary to include new information while keeping it concise."
             )
         else:
             user_prompt = (
                 f"Conversation to summarize:\n" + "\n".join(recent_messages) + "\n\n"
-                "Create a concise summary of this travel planning conversation as a short paragraph with no more than 300-500 words."
+                "Create a concise summary of this travel planning conversation."
             )
         
         try:
