@@ -15,7 +15,7 @@ from autogen_core.models import (
     UserMessage,
     FunctionExecutionResultMessage,
 )
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_ext.models.gemini import GeminiChatCompletionClient
 
 
 class RedisChatCompletionContextConfig(BaseModel):
@@ -24,7 +24,7 @@ class RedisChatCompletionContextConfig(BaseModel):
     redis_key_prefix: str = Field(default="chat_history", description="Redis key prefix for storing messages")
     user_id: str = Field(description="Unique identifier for this chat context")
     initial_messages: List[LLMMessage] | None = None
-    summary_model: str = Field(default="gpt-4o-mini", description="OpenAI model used for summarization")
+    summary_model: str = Field(default="gemini-2.0-flash-001", description="Gemini model used for summarization")
 
 
 class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompletionContextConfig]):
@@ -41,7 +41,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         redis_key_prefix (str): Prefix for Redis keys.
         user_id (str): Unique identifier for this chat context.
         initial_messages (List[LLMMessage] | None): The initial messages.
-        summary_model (str): OpenAI model used for summarization.
+        summary_model (str): Gemini model used for summarization.
     """
 
     component_config_schema = RedisChatCompletionContextConfig
@@ -53,7 +53,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         redis_key_prefix: str = "chat_history",
         user_id: str = "default",
         initial_messages: List[LLMMessage] | None = None,
-        summary_model: str = "gpt-4.1-nano",
+        summary_model: str = "gemini-2.0-flash-001",
     ) -> None:
         if buffer_size <= 0:
             raise ValueError("buffer_size must be greater than 0.")
@@ -72,8 +72,8 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         self._summary_key = f"{redis_key_prefix}:{user_id}:summary"
         self._summary_upto_key = f"{redis_key_prefix}:{user_id}:summary_upto"
         
-        # OpenAI client for summarization
-        self._summary_client = OpenAIChatCompletionClient(model=summary_model)
+        # Gemini client for summarization
+        self._summary_client = GeminiChatCompletionClient(model=summary_model)
         
         # Initialize Redis with initial messages if provided
         if initial_messages:
@@ -313,7 +313,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
         return turns
     
     async def _generate_summary(self, existing_summary: str | None, recent_messages: List[str]) -> str | None:
-        """Generate a conversation summary using the OpenAI client."""
+        """Generate a conversation summary using the Gemini client."""
         if not recent_messages:
             return existing_summary
         
@@ -337,7 +337,7 @@ class RedisChatCompletionContext(ChatCompletionContext, Component[RedisChatCompl
             )
         
         try:
-            # Use the autogen OpenAI client
+            # Use the autogen Gemini client
             response = await self._summary_client.create([
                 SystemMessage(content=system_prompt),
                 UserMessage(content=user_prompt, source="user"),

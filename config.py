@@ -14,14 +14,14 @@ class AppConfig(BaseSettings):
     """Application configuration with validation."""
     
     # API Keys
-    openai_api_key: str = Field(..., env="OPENAI_API_KEY", description="OpenAI API key")
+    google_api_key: str = Field(..., env="GOOGLE_API_KEY", description="Google Gemini API key")
     tavily_api_key: str = Field(..., env="TAVILY_API_KEY", description="Tavily API key")
 
     # Model Configuration
-    travel_agent_model: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL", description="OpenAI model name for the travel agent")
-    mem0_model: str = Field(default="gpt-4.1-mini", env="MEM0_MODEL", description="OpenAI LLM name for the travel agent memory system")
-    mem0_embedding_model: str = Field(default="text-embedding-3-small", env="MEM0_EMBEDDING_MODEL", description="OpenAI embedding model for Mem0 memory system")
-    mem0_embedding_model_dims: int = Field(default=1536, env="MEM0_EMBDDING_MODEL_DIMS", description="Embedding dimensions for OpenAI embedding model")
+    travel_agent_model: str = Field(default="gemini-2.0-flash-001", env="TRAVEL_AGENT_MODEL", description="Gemini model name for the travel agent")
+    mem0_model: str = Field(default="gemini-2.0-flash-001", env="MEM0_MODEL", description="Gemini LLM name for the travel agent memory system")
+    mem0_embedding_model: str = Field(default="models/text-embedding-004", env="MEM0_EMBEDDING_MODEL", description="Gemini embedding model for Mem0 memory system")
+    mem0_embedding_model_dims: int = Field(default=768, env="MEM0_EMBDDING_MODEL_DIMS", description="Embedding dimensions for Gemini embedding model")
 
     # Other config
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
@@ -43,12 +43,12 @@ class AppConfig(BaseSettings):
         case_sensitive = False
         extra = "ignore"  # Ignore extra environment variables
     
-    @field_validator("openai_api_key")
+    @field_validator("google_api_key")
     @classmethod
-    def validate_openai_key(cls, v):
-        """Validate OpenAI API key format."""
-        if not v.startswith("sk-"):
-            raise ValueError("OpenAI API key must start with 'sk-'")
+    def validate_google_key(cls, v):
+        """Validate Google API key format."""
+        if not v or len(v) < 10:
+            raise ValueError("Google API key must be a valid key")
         return v
     
 
@@ -61,24 +61,22 @@ def get_config() -> AppConfig:
     except Exception as e:
         print(f"❌ Configuration Error: {e}")
         print("\n📝 Please check your environment variables or create a .env file with:")
-        print("OPENAI_API_KEY=sk-your-key-here")
+        print("GOOGLE_API_KEY=your-key-here")
         print("TAVILY_API_KEY=your-key-here")
         raise SystemExit(1)
 
 
 def validate_dependencies() -> bool:
     """Validate that required services are available."""
-    from openai import OpenAI
+    import google.genai as genai
     
     config = get_config()
     
-    # Test OpenAI API
     try:
-        client = OpenAI(api_key=config.openai_api_key)
-        # Just test the client creation, not making an actual API call
-        print("✅ OpenAI API key configured")
+        genai.configure(api_key=config.google_api_key)
+        print("✅ Google API key configured")
     except Exception as e:
-        print(f"❌ OpenAI API error: {e}")
+        print(f"❌ Google API error: {e}")
         return False
     
     print("✅ All dependencies validated")

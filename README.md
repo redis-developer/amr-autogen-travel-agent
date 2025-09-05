@@ -16,7 +16,7 @@ A sophisticated AI travel planning assistant showcasing AutoGen's advanced memor
 
 ### Step 1: Get Your API Keys
 You'll need three API keys:
-- **OpenAI API Key**: Get from [platform.openai.com](https://platform.openai.com/api-keys)
+- **Google API Key**: Get from [Google AI Studio](https://aistudio.google.com/app/apikey)
 - **Tavily API Key**: Get from [tavily.com](https://tavily.com) (free tier available)  
 - **Redis URL**: See step two
 

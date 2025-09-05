@@ -31,7 +31,7 @@ from autogen_agentchat.messages import (
 )
 from autogen_core.tools import FunctionTool
 from autogen_core.memory import MemoryContent, MemoryMimeType
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_ext.models.gemini import GeminiChatCompletionClient
 from autogen_ext.memory.mem0 import Mem0Memory
 from tavily import TavilyClient
 from ics import Calendar, Event, DisplayAlarm
@@ -71,7 +71,7 @@ class TravelAgent:
     Attributes:
         config: Application configuration containing API keys and model settings
         tavily_client: Web search client for travel information
-        agent_model: OpenAI client for the main travel agent
+        agent_model: Gemini client for the main travel agent
     """
 
     def __init__(self, config: Optional[AppConfig] = None):
@@ -86,14 +86,13 @@ class TravelAgent:
         self.config = config
 
         # Set environment variables for SDK clients
-        os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        os.environ["GOOGLE_API_KEY"] = config.google_api_key
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
 
         # Initialize shared clients
         self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
-        self.agent_model = OpenAIChatCompletionClient(
-            model=config.travel_agent_model, 
-            parallel_tool_calls=False
+        self.agent_model = GeminiChatCompletionClient(
+            model=config.travel_agent_model
         )
 
         # Initialize user context cache
@@ -122,18 +121,18 @@ class TravelAgent:
             is_cloud=False,
             config={
                 "llm": {
-                    "provider": "openai",
+                    "provider": "gemini",
                     "config": {
                         "model": self.config.mem0_model,
                         "temperature": 0.1,
-                        "api_key": self.config.openai_api_key,
+                        "api_key": self.config.google_api_key,
                     }
                 },
                 "embedder": {
-                    "provider": "openai",
+                    "provider": "gemini",
                     "config": {
                         "model": self.config.mem0_embedding_model,
-                        "api_key": self.config.openai_api_key,
+                        "api_key": self.config.google_api_key,
                     }
                 },
                 "vector_store": {
@@ -212,7 +211,7 @@ class TravelAgent:
 
     def get_all_user_ids(self) -> List[str]:
         """Return a unified list of user IDs from currently cached contexts."""
-        return self._user_ctx_cache.keys()
+        return list(self._user_ctx_cache.keys())
 
     async def _init_seed_users(self) -> None:
         """Initialize seed users with memories from seed.json."""
@@ -746,7 +745,7 @@ class TravelAgent:
                     "llm_response_received",
                     "📥",
                     f"LLM #{llm_call_index}: response received",
-                    f"Model: {model_name or 'OpenAI'}",
+                    f"Model: {model_name or 'Gemini'}",
                 )
 
 
